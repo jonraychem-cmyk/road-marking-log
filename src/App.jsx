@@ -1,22 +1,15 @@
 import { useState, useCallback } from "react";
 
-// ── Google Sheets config v2 ───────────────────────────────────────────────────
-const SHEET_ID = "1-Lj53Phr5u7ILgXuBe5HtvDEP-XEA4PzQIFUa92a90c";
-const API_KEY  = "AIzaSyC1YPAvTCz1wPraNpRFEapMvjfQp5HkBhw";
-const SHEET_NAME = "Log";
+// ── Google Sheets via Apps Script ────────────────────────────────────────────
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx9XY9aVWNCBdH0fIzz5dFJQKiF1kNHx5Qspn_UrFvrF6-7J9-Obh5lCETvnh3Lw0_XZg/exec";
 
 async function appendToSheet(row) {
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(SHEET_NAME)}:append?valueInputOption=USER_ENTERED&key=${API_KEY}`;
-  const res = await fetch(url, {
+  await fetch(APPS_SCRIPT_URL, {
     method: "POST",
+    mode: "no-cors",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ values: [row] }),
+    body: JSON.stringify({ row }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || res.statusText);
-  }
-  return res.json();
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -331,28 +324,22 @@ function LocationLog({ location, project, onUpdate }) {
 
     // Sync to Google Sheets
     setSyncStatus("syncing");
-    try {
-      const now = new Date();
-      const timestamp = now.toLocaleString("en-GB", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" });
-      const row = [
-        timestamp,
-        project.name,
-        project.region + (project.subRegion ? " > " + project.subRegion : ""),
-        project.assignedTo || "",
-        location.name,
-        item.type,
-        item.label,
-        item.meters || item.quantity || item.zebraQty || "",
-        item.size || "",
-      ];
-      await appendToSheet(row);
-      setSyncStatus("ok");
-      setTimeout(() => setSyncStatus(null), 3000);
-    } catch (e) {
-      console.error("Sheet sync error:", e);
-      setSyncStatus("error:" + e.message);
-      setTimeout(() => setSyncStatus(null), 12000);
-    }
+    const now = new Date();
+    const timestamp = now.toLocaleString("en-GB", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" });
+    const row = [
+      timestamp,
+      project.name,
+      project.region + (project.subRegion ? " > " + project.subRegion : ""),
+      project.assignedTo || "",
+      location.name,
+      item.type,
+      item.label,
+      item.meters || item.quantity || item.zebraQty || "",
+      item.size || "",
+    ];
+    appendToSheet(row).catch(console.error);
+    setSyncStatus("ok");
+    setTimeout(() => setSyncStatus(null), 3000);
   }, [location, project, onUpdate]);
 
   const removeItem = (id) => onUpdate({ ...location, workItems:location.workItems.filter((i) => i.id!==id) });
