@@ -1,14 +1,38 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 // ── Google Sheets via Apps Script ────────────────────────────────────────────
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx9XY9aVWNCBdH0fIzz5dFJQKiF1kNHx5Qspn_UrFvrF6-7J9-Obh5lCETvnh3Lw0_XZg/exec";
 
-async function appendToSheet(row) {
+async function appendToSheet(row, type="log") {
   await fetch(APPS_SCRIPT_URL, {
     method: "POST",
     mode: "no-cors",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ row }),
+    body: JSON.stringify({ type, row }),
+  });
+}
+
+async function saveProjectsToSheet(projects) {
+  await fetch(APPS_SCRIPT_URL, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "saveProjects", projects }),
+  });
+}
+
+async function loadProjectsFromSheet() {
+  const res = await fetch(APPS_SCRIPT_URL + "?action=getProjects");
+  if (!res.ok) throw new Error("Failed to load");
+  return res.json();
+}
+
+async function appendHoursToSheet(row) {
+  await fetch(APPS_SCRIPT_URL, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "hours", row }),
   });
 }
 
@@ -20,10 +44,11 @@ const SUB_REGIONS = {
 };
 const STENCIL_OPTIONS = ["Fatladur","Rafhledsla","Or","BUS","Ruta","Gongukall","Hjolhysi","Hjol","Other"];
 const ZEBRA_SIZES = ["50x300","50x250","50x240","50x200","50x120","Custom"];
-const WORK_TYPES = ["Linur","Midlinur","Stencil","Blue Square (Fatladur)","Green Square (Rafhledsla)","Gangbraut"];
+const WORK_TYPES = ["Linur","Midlinur","Stencil","Blue Square (Fatladur)","Green Square (Rafhledsla)","Gangbraut","Þríhyrningar"];
 const CARS = ["Car 1","Car 2","Unassigned"];
 const CHECKLIST_PRESETS = {
   "Stencils": ["Fatladur","Rafhledsla","Or","BUS","Ruta","Gongukall","Hjolhysi","Hjol"],
+  "Þríhyrningar": ["Þríhyrningar (shark's teeth)"],
   "Paint": ["White paint","Yellow paint","Blue paint (Fatladur)","Green paint (Rafhledsla)","Red paint"],
   "Equipment": ["Line machine","Stencil sprayer","Compressor","Tape","Primer","Cleaning solvent"],
 };
@@ -48,17 +73,17 @@ const initialProjects = [
     finished:false, notes:"Annual refresh of all markings",
     drawings:[], contacts:[], checklist:[],
     locations:[
-      { id:1, name:"Terminal Parking", workItems:[] },
-      { id:2, name:"Staff Parking", workItems:[] },
+      { id:1, name:"Terminal Parking", workItems:[], address:"" },
+      { id:2, name:"Staff Parking", workItems:[], address:"" },
     ],
   },
   {
     id:2, name:"Akureyri Town", region:"Rest of Iceland", subRegion:"Akureyri",
     assignedTo:"", finished:false, notes:"", drawings:[], contacts:[], checklist:[],
     locations:[
-      { id:1, name:"Church", workItems:[] },
-      { id:2, name:"Sports Area", workItems:[] },
-      { id:3, name:"School", workItems:[] },
+      { id:1, name:"Church", workItems:[], address:"" },
+      { id:2, name:"Sports Area", workItems:[], address:"" },
+      { id:3, name:"School", workItems:[], address:"" },
     ],
   },
 ];
@@ -221,6 +246,104 @@ function ContactSection({ contacts=[], onUpdate }) {
   );
 }
 
+// ── Þríhyrningar Mode ────────────────────────────────────────────────────────
+function TriangleMode({ onDone, onCancel }) {
+  const [count, setCount] = useState(0);
+  const [stops, setStops] = useState([]); // [{stop, count}]
+
+  const adjust = (n) => setCount(Math.max(0, Math.min(10, count + n)));
+  const total = stops.reduce((s, x) => s + x.count, 0);
+
+  const logStop = () => {
+    if (count === 0) return;
+    setStops([...stops, { stop: stops.length + 1, count }]);
+    setCount(0);
+  };
+
+  const finish = () => {
+    if (stops.length === 0 && count === 0) { onCancel(); return; }
+    // If there's an unlogged count, log it first
+    const finalStops = count > 0 ? [...stops, { stop: stops.length + 1, count }] : stops;
+    const finalTotal = finalStops.reduce((s, x) => s + x.count, 0);
+    const stopSummary = finalStops.map((s) => `Stop ${s.stop}: ${s.count}`).join(", ");
+    const item = {
+      id: Date.now(),
+      type: "Þríhyrningar",
+      quantity: finalTotal,
+      stops: finalStops,
+      label: `Þríhyrningar: ${finalTotal} total (${stopSummary})`,
+    };
+    onDone(item);
+  };
+
+  return (
+    <div style={{ background:"#1a1a1a", border:"1px solid #333", borderRadius:8, padding:16, marginTop:8 }}>
+      {/* Header */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:14 }}>
+        <div style={{ fontWeight:700, color:"#e0e0e0", fontSize:14 }}>Þríhyrningar</div>
+        <div style={{ color:"#555", fontSize:12 }}>
+          {stops.length > 0 && `${stops.length} stop${stops.length!==1?"s":""} · ${total} total`}
+        </div>
+      </div>
+
+      {/* Stop log */}
+      {stops.length > 0 && (
+        <div style={{ marginBottom:12, display:"flex", flexWrap:"wrap", gap:6 }}>
+          {stops.map((s) => (
+            <span key={s.stop} style={{ background:"#111", border:"1px solid #2a2a2a", borderRadius:6, color:"#888", fontSize:12, padding:"3px 8px" }}>
+              Stop {s.stop}: {s.count}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Counter */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:20, marginBottom:16 }}>
+        <button
+          onClick={() => adjust(-1)}
+          style={{ width:56, height:56, borderRadius:"50%", background:count>0?"#2a2a2a":"#111", border:"2px solid #333", color:"#e0e0e0", fontSize:28, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:300 }}
+        >−</button>
+        <div style={{ textAlign:"center" }}>
+          <div style={{ fontSize:52, fontWeight:800, color:"#e0e0e0", lineHeight:1 }}>{count}</div>
+          <div style={{ color:"#555", fontSize:11, marginTop:4 }}>this stop</div>
+        </div>
+        <button
+          onClick={() => adjust(1)}
+          style={{ width:56, height:56, borderRadius:"50%", background:count<10?"#2a3a2a":"#111", border:"2px solid #333", color:count<10?"#4a9a4a":"#444", fontSize:28, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:300 }}
+        >+</button>
+      </div>
+
+      {/* Quick tap buttons 1-10 */}
+      <div style={{ display:"flex", flexWrap:"wrap", gap:6, justifyContent:"center", marginBottom:14 }}>
+        {[1,2,3,4,5,6,7,8,9,10].map((n) => (
+          <button key={n} onClick={() => setCount(n)} style={{ width:38, height:38, borderRadius:8, background:count===n?"#e8f0e8":"#111", color:count===n?"#111":"#666", border:`1px solid ${count===n?"#e8f0e8":"#2a2a2a"}`, fontSize:14, fontWeight:count===n?700:400, cursor:"pointer" }}>
+            {n}
+          </button>
+        ))}
+      </div>
+
+      {/* Actions */}
+      <div style={{ display:"flex", gap:8 }}>
+        <button
+          onClick={logStop}
+          disabled={count===0}
+          style={{ flex:1, background:count>0?"#1a2a3a":"#111", color:count>0?"#6aacf0":"#444", border:`1px solid ${count>0?"#2a4a6a":"#222"}`, borderRadius:6, padding:"10px", fontSize:13, fontWeight:700, cursor:count>0?"pointer":"default" }}
+        >
+          Log stop →
+        </button>
+        <button
+          onClick={finish}
+          disabled={stops.length===0 && count===0}
+          style={{ flex:1, background:stops.length>0||count>0?"#e8f0e8":"#111", color:stops.length>0||count>0?"#111":"#444", border:"none", borderRadius:6, padding:"10px", fontSize:13, fontWeight:700, cursor:stops.length>0||count>0?"pointer":"default" }}
+        >
+          Done · {total + count} total
+        </button>
+      </div>
+      <button onClick={onCancel} style={{ ...{background:"none", color:"#555", border:"none", fontSize:12, cursor:"pointer", marginTop:10, width:"100%", textAlign:"center"} }}>Cancel</button>
+    </div>
+  );
+}
+
 // ── Work Item Form ────────────────────────────────────────────────────────────
 function WorkItemForm({ onAdd, onCancel }) {
   const [type, setType] = useState("Linur");
@@ -248,9 +371,16 @@ function WorkItemForm({ onAdd, onCancel }) {
       if (!zebraQty) return;
       const sz = zebraSize==="Custom" ? zebraCustom : zebraSize;
       item.size=sz; item.quantity=zebraQty; item.label="Gangbraut "+sz+"cm x "+zebraQty;
+    } else if (type==="Þríhyrningar") {
+      // Handled by TriangleMode — shouldn't reach here
+      return;
     }
     onAdd(item);
   };
+
+  if (type === "Þríhyrningar") {
+    return <TriangleMode onDone={onAdd} onCancel={onCancel} />;
+  }
 
   return (
     <div style={{ background:"#1a1a1a", border:"1px solid #333", borderRadius:8, padding:16, marginTop:8 }}>
@@ -313,9 +443,21 @@ function DrawingsSection({ drawings, onUpdate }) {
 }
 
 // ── Location Log ──────────────────────────────────────────────────────────────
+function openMaps(address) {
+  const encoded = encodeURIComponent(address);
+  // Opens Apple Maps on iOS, Google Maps on Android/desktop
+  const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const url = isIos
+    ? `maps://maps.apple.com/?q=${encoded}`
+    : `https://www.google.com/maps/search/?api=1&query=${encoded}`;
+  window.open(url, "_blank");
+}
+
 function LocationLog({ location, project, onUpdate }) {
   const [showForm, setShowForm] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [addressDraft, setAddressDraft] = useState(location.address || "");
 
   const addItem = useCallback(async (item) => {
     // Update local state immediately
@@ -344,12 +486,50 @@ function LocationLog({ location, project, onUpdate }) {
 
   const removeItem = (id) => onUpdate({ ...location, workItems:location.workItems.filter((i) => i.id!==id) });
 
+  const saveAddress = () => {
+    onUpdate({ ...location, address: addressDraft });
+    setEditingAddress(false);
+  };
+
   return (
     <div style={{ background:"#111", border:"1px solid #2a2a2a", borderRadius:8, padding:14, marginBottom:10 }}>
-      <div style={{ display:"flex", alignItems:"center", marginBottom:8 }}>
-        <span style={{ fontWeight:600, color:"#e0e0e0", fontSize:15 }}>{location.name}</span>
-        <SyncBadge status={syncStatus} />
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <span style={{ fontWeight:600, color:"#e0e0e0", fontSize:15 }}>{location.name}</span>
+          <SyncBadge status={syncStatus} />
+        </div>
+        {location.address ? (
+          <button onClick={() => openMaps(location.address)} style={{ background:"#1a2a1a", border:"1px solid #2a4a2a", borderRadius:6, color:"#4a9a4a", fontSize:12, padding:"4px 10px", cursor:"pointer", flexShrink:0 }}>
+            📍 Navigate
+          </button>
+        ) : (
+          <button onClick={() => setEditingAddress(true)} style={{ background:"none", border:"1px solid #2a2a2a", borderRadius:6, color:"#555", fontSize:11, padding:"3px 8px", cursor:"pointer", flexShrink:0 }}>
+            + Address
+          </button>
+        )}
       </div>
+      {editingAddress && (
+        <div style={{ marginBottom:10 }}>
+          <input
+            type="text" value={addressDraft}
+            onChange={(e) => setAddressDraft(e.target.value)}
+            onKeyDown={(e) => e.key==="Enter" && saveAddress()}
+            placeholder="e.g. Keflavíkurflugvöllur, Iceland"
+            style={{ ...inputStyle, fontSize:13, marginBottom:6 }}
+            autoFocus
+          />
+          <div style={{ display:"flex", gap:6 }}>
+            <button onClick={saveAddress} style={{ ...btnPrimary, fontSize:12, padding:"5px 12px" }}>Save</button>
+            <button onClick={() => setEditingAddress(false)} style={{ ...btnSecondary, fontSize:12, padding:"5px 12px" }}>Cancel</button>
+            {location.address && <button onClick={() => { setAddressDraft(""); onUpdate({ ...location, address:"" }); setEditingAddress(false); }} style={{ ...btnSecondary, fontSize:12, padding:"5px 12px", color:"#7a3a3a" }}>Remove</button>}
+          </div>
+        </div>
+      )}
+      {location.address && !editingAddress && (
+        <div onClick={() => { setAddressDraft(location.address); setEditingAddress(true); }} style={{ color:"#555", fontSize:11, marginBottom:8, cursor:"pointer" }}>
+          {location.address}
+        </div>
+      )}
       {location.workItems.length===0 && <div style={{ color:"#444", fontSize:13, marginBottom:8 }}>No work logged yet</div>}
       {location.workItems.map((item) => (
         <div key={item.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"#1a1a1a", borderRadius:6, padding:"6px 10px", marginBottom:6, fontSize:13, color:"#ccc" }}>
@@ -366,15 +546,259 @@ function LocationLog({ location, project, onUpdate }) {
   );
 }
 
+// ── Hours Tracker ────────────────────────────────────────────────────────────
+function roundDown15(date) {
+  const d = new Date(date);
+  d.setMinutes(Math.floor(d.getMinutes() / 15) * 15, 0, 0);
+  return d;
+}
+function roundUp15(date) {
+  const d = new Date(date);
+  const m = d.getMinutes();
+  const rem = m % 15;
+  if (rem === 0) return d;
+  d.setMinutes(m + (15 - rem), 0, 0);
+  return d;
+}
+function fmtTime(date) {
+  return date.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
+}
+function diffHours(a, b) {
+  return ((b - a) / 3600000).toFixed(2);
+}
+
+function HoursTracker({ onClose }) {
+  const [name, setName] = useState("");
+  const [clockedIn, setClockedIn] = useState(null); // { raw, rounded, name }
+  const [log, setLog] = useState([]);
+  const [syncing, setSyncing] = useState(false);
+  const [synced, setSynced] = useState(false);
+
+  const clockIn = () => {
+    if (!name.trim()) return;
+    const now = new Date();
+    setClockedIn({ raw: now, rounded: roundDown15(now), name: name.trim() });
+    setSynced(false);
+  };
+
+  const clockOut = async () => {
+    if (!clockedIn) return;
+    const now = new Date();
+    const roundedOut = roundUp15(now);
+    const hours = diffHours(clockedIn.rounded, roundedOut);
+    const today = now.toLocaleDateString("en-GB");
+    const entry = {
+      date: today,
+      name: clockedIn.name,
+      clockIn: fmtTime(clockedIn.rounded),
+      clockOut: fmtTime(roundedOut),
+      hours,
+    };
+    setLog([...log, entry]);
+    setSyncing(true);
+    appendHoursToSheet([entry.date, entry.name, entry.clockIn, entry.clockOut, entry.hours]).catch(console.error);
+    setTimeout(() => { setSyncing(false); setSynced(true); }, 1000);
+    setClockedIn(null);
+  };
+
+  return (
+    <div style={{ background:"#161616", border:"1px solid #2a2a2a", borderRadius:10, marginBottom:16, overflow:"hidden" }}>
+      <div style={{ padding:"14px 16px", borderBottom:"1px solid #1a1a1a", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div style={{ fontWeight:700, fontSize:15 }}>⏱ Hours</div>
+        <button onClick={onClose} style={{ background:"none", border:"none", color:"#555", fontSize:18, cursor:"pointer" }}>×</button>
+      </div>
+      <div style={{ padding:"14px 16px" }}>
+        {!clockedIn ? (
+          <div>
+            <div style={{ marginBottom:10 }}>
+              <label style={labelStyle}>Name</label>
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Jón" style={inputStyle} />
+            </div>
+            <button onClick={clockIn} disabled={!name.trim()} style={{ ...btnSuccess, width:"100%", padding:"12px", fontSize:14, fontWeight:700, opacity:name.trim()?1:0.4 }}>
+              Clock in
+            </button>
+          </div>
+        ) : (
+          <div style={{ textAlign:"center" }}>
+            <div style={{ color:"#555", fontSize:12, marginBottom:4 }}>{clockedIn.name} · clocked in</div>
+            <div style={{ fontSize:36, fontWeight:800, color:"#4a9a4a", marginBottom:2 }}>{fmtTime(clockedIn.rounded)}</div>
+            <div style={{ color:"#444", fontSize:11, marginBottom:16 }}>rounded from {fmtTime(clockedIn.raw)}</div>
+            <button onClick={clockOut} style={{ background:"#e8f0e8", color:"#111", border:"none", borderRadius:8, padding:"12px 32px", fontSize:14, fontWeight:700, cursor:"pointer", width:"100%" }}>
+              Clock out
+            </button>
+          </div>
+        )}
+
+        {log.length > 0 && (
+          <div style={{ marginTop:14, borderTop:"1px solid #1a1a1a", paddingTop:12 }}>
+            {log.map((e, i) => (
+              <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:"#888", marginBottom:6 }}>
+                <span>{e.name}</span>
+                <span>{e.clockIn} → {e.clockOut}</span>
+                <span style={{ color:"#4a9a4a" }}>{e.hours}h</span>
+              </div>
+            ))}
+            {syncing && <div style={{ color:"#6aacf0", fontSize:11, textAlign:"center" }}>Syncing…</div>}
+            {synced && !syncing && <div style={{ color:"#4a9a4a", fontSize:11, textAlign:"center" }}>✓ Logged to sheet</div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Trips ─────────────────────────────────────────────────────────────────────
+function TripsView({ projects, onClose }) {
+  const [selected, setSelected] = useState([]);
+  const [tripName, setTripName] = useState("");
+  const [showChecklist, setShowChecklist] = useState(false);
+
+  const toggle = (id) => setSelected(selected.includes(id) ? selected.filter((x) => x!==id) : [...selected, id]);
+
+  const selectedProjects = projects.filter((p) => selected.includes(p.id));
+
+  // Merge and deduplicate checklists
+  const mergedChecklist = [];
+  const seen = new Set();
+  selectedProjects.forEach((p) => {
+    (p.checklist||[]).forEach((item) => {
+      if (!seen.has(item.label)) {
+        seen.add(item.label);
+        mergedChecklist.push({ ...item, id: Date.now() + Math.random() });
+      }
+    });
+  });
+
+  const totalItems = selectedProjects.reduce((s, p) => s + p.locations.reduce((ls, l) => ls + l.workItems.length, 0), 0);
+
+  return (
+    <div style={{ background:"#161616", border:"1px solid #2a2a2a", borderRadius:10, marginBottom:16, overflow:"hidden" }}>
+      <div style={{ padding:"14px 16px", borderBottom:"1px solid #1a1a1a", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div style={{ fontWeight:700, fontSize:15 }}>🗺 Trip planner</div>
+        <button onClick={onClose} style={{ background:"none", border:"none", color:"#555", fontSize:18, cursor:"pointer" }}>×</button>
+      </div>
+      <div style={{ padding:"14px 16px" }}>
+        {!showChecklist ? (
+          <div>
+            <div style={{ marginBottom:10 }}>
+              <label style={labelStyle}>Trip name (optional)</label>
+              <input type="text" value={tripName} onChange={(e) => setTripName(e.target.value)} placeholder="e.g. Monday run" style={inputStyle} />
+            </div>
+            <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:8 }}>Select projects</div>
+            {projects.filter((p) => !p.finished).map((p) => (
+              <div key={p.id} onClick={() => toggle(p.id)} style={{ display:"flex", alignItems:"center", gap:10, background:selected.includes(p.id)?"#0f1a0f":"#111", border:`1px solid ${selected.includes(p.id)?"#1e3a1e":"#222"}`, borderRadius:8, padding:"10px 12px", marginBottom:6, cursor:"pointer" }}>
+                <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${selected.includes(p.id)?"#4a9a4a":"#444"}`, background:selected.includes(p.id)?"#1a4a1a":"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                  {selected.includes(p.id) && <span style={{ color:"#4a9a4a", fontSize:12 }}>✓</span>}
+                </div>
+                <div>
+                  <div style={{ color:"#e0e0e0", fontSize:13, fontWeight:600 }}>{p.name}</div>
+                  <div style={{ color:"#555", fontSize:11 }}>{p.region}{p.subRegion?" > "+p.subRegion:""} · {(p.checklist||[]).length} checklist items</div>
+                </div>
+              </div>
+            ))}
+            {selected.length > 0 && (
+              <button onClick={() => setShowChecklist(true)} style={{ ...btnPrimary, width:"100%", marginTop:8, padding:"10px" }}>
+                View combined checklist ({mergedChecklist.length} items) →
+              </button>
+            )}
+          </div>
+        ) : (
+          <div>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}>
+              <button onClick={() => setShowChecklist(false)} style={{ background:"none", border:"none", color:"#888", fontSize:13, cursor:"pointer", padding:0 }}>← Back</button>
+              <div style={{ fontWeight:700, color:"#e0e0e0" }}>{tripName || "Trip"} checklist</div>
+            </div>
+            <div style={{ color:"#555", fontSize:12, marginBottom:10 }}>
+              {selectedProjects.length} projects · {totalItems} items logged · {mergedChecklist.length} things to bring
+            </div>
+            {mergedChecklist.map((item) => (
+              <div key={item.id} style={{ display:"flex", alignItems:"center", gap:10, background:"#111", border:"1px solid #222", borderRadius:7, padding:"9px 12px", marginBottom:6 }}>
+                <div style={{ width:18, height:18, borderRadius:4, border:"2px solid #444", flexShrink:0 }} />
+                <span style={{ fontSize:13, color:"#ccc" }}>{item.label}</span>
+              </div>
+            ))}
+            {mergedChecklist.length === 0 && (
+              <div style={{ color:"#444", fontSize:13, textAlign:"center", padding:"20px 0" }}>No checklist items on selected projects</div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Work Mode ─────────────────────────────────────────────────────────────────
+function WorkMode({ project, onUpdate, onExit }) {
+  const updateLocation = (loc) => onUpdate({ ...project, locations:project.locations.map((l) => l.id===loc.id ? loc : l) });
+  const hasDrawings = (project.drawings||[]).length > 0;
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#0a0a0a", color:"#e0e0e0", fontFamily:"'Inter', system-ui, sans-serif", maxWidth:600, margin:"0 auto", padding:"0 0 40px" }}>
+      {/* Header */}
+      <div style={{ padding:"16px 16px 14px", borderBottom:"1px solid #1a1a1a", position:"sticky", top:0, background:"#0a0a0a", zIndex:10 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+          <button onClick={onExit} style={{ background:"none", border:"1px solid #333", borderRadius:8, color:"#888", fontSize:13, padding:"6px 12px", cursor:"pointer", flexShrink:0 }}>
+            ← Back
+          </button>
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontWeight:800, fontSize:16, letterSpacing:-0.3, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{project.name}</div>
+            <div style={{ color:"#444", fontSize:11 }}>Work mode · {project.assignedTo||"Unassigned"}</div>
+          </div>
+          {!project.finished && (
+            <button onClick={() => onUpdate({ ...project, finished:true })} style={{ ...{background:"#1a3a1a", color:"#4a9a4a", border:"1px solid #2a5a2a", borderRadius:6, padding:"6px 12px", fontSize:12, cursor:"pointer"}, marginLeft:"auto", flexShrink:0 }}>
+              ✓ Finish
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div style={{ padding:"14px 16px 0" }}>
+        {/* Notes if present */}
+        {project.notes && (
+          <div style={{ background:"#111", border:"1px solid #2a2a2a", borderRadius:8, padding:"10px 12px", marginBottom:14, color:"#888", fontSize:13, fontStyle:"italic", lineHeight:1.5 }}>
+            {project.notes}
+          </div>
+        )}
+
+        {/* Drawings if present */}
+        {hasDrawings && (
+          <div style={{ marginBottom:14 }}>
+            <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:8 }}>Drawings</div>
+            {project.drawings.map((d) => (
+              <div key={d.id} style={{ display:"flex", alignItems:"center", gap:8, background:"#1a1a1a", borderRadius:6, padding:"9px 12px", marginBottom:6 }}>
+                <span style={{ color:"#555", fontSize:13 }}>[+]</span>
+                {d.url ? (
+                  <a href={d.url} target="_blank" rel="noopener noreferrer" style={{ color:"#7ab8f5", fontSize:14, flex:1, textDecoration:"none", fontWeight:600 }}>{d.label}</a>
+                ) : (
+                  <span style={{ color:"#ccc", fontSize:14, flex:1 }}>{d.label}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Divider */}
+        {(project.notes || hasDrawings) && <div style={{ borderTop:"1px solid #1a1a1a", marginBottom:14 }} />}
+
+        {/* Locations — logging only */}
+        <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>Locations</div>
+        {project.locations.map((loc) => (
+          <LocationLog key={loc.id} location={loc} project={project} onUpdate={updateLocation} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Project Card ──────────────────────────────────────────────────────────────
-function ProjectCard({ project, onUpdate, onDelete }) {
+function ProjectCard({ project, onUpdate, onDelete, onStartWork }) {
   const [expanded, setExpanded] = useState(false);
   const [newLocationName, setNewLocationName] = useState("");
   const [showAddLocation, setShowAddLocation] = useState(false);
 
   const addLocation = () => {
     if (!newLocationName.trim()) return;
-    onUpdate({ ...project, locations:[...project.locations, { id:Date.now(), name:newLocationName.trim(), workItems:[] }] });
+    onUpdate({ ...project, locations:[...project.locations, { id:Date.now(), name:newLocationName.trim(), workItems:[], address:"" }] });
     setNewLocationName(""); setShowAddLocation(false);
   };
   const updateLocation = (loc) => onUpdate({ ...project, locations:project.locations.map((l) => l.id===loc.id ? loc : l) });
@@ -428,7 +852,10 @@ function ProjectCard({ project, onUpdate, onDelete }) {
             <button onClick={() => setShowAddLocation(true)} style={{ ...btnSecondary, fontSize:12, marginTop:4 }}>+ Add location</button>
           )}
 
-          <div style={{ display:"flex", gap:8, marginTop:14, paddingTop:14, borderTop:"1px solid #222" }}>
+          <div style={{ display:"flex", gap:8, marginTop:14, paddingTop:14, borderTop:"1px solid #222", flexWrap:"wrap" }}>
+            <button onClick={onStartWork} style={{ background:"#1a2a3a", color:"#6aacf0", border:"1px solid #2a4a6a", borderRadius:6, padding:"8px 16px", fontSize:13, cursor:"pointer", fontWeight:700 }}>
+              ▶ Start work
+            </button>
             <button onClick={() => onUpdate({ ...project, finished:!project.finished })} style={project.finished?btnSecondary:btnSuccess}>
               {project.finished?"Reopen":"Mark finished"}
             </button>
@@ -464,20 +891,59 @@ function NewProjectForm({ onAdd, onCancel }) {
 
 // ── App Root ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const [projects, setProjects] = useState(initialProjects);
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
   const [filter, setFilter] = useState("active");
   const [search, setSearch] = useState("");
+  const [carFilter, setCarFilter] = useState("all");
+  const [workMode, setWorkMode] = useState(null);
+  const [showHours, setShowHours] = useState(false);
+  const [showTrips, setShowTrips] = useState(false);
 
-  const addProject = (p) => { setProjects([p,...projects]); setShowNew(false); };
-  const updateProject = (p) => setProjects(projects.map((x) => x.id===p.id ? p : x));
-  const deleteProject = (id) => setProjects(projects.filter((p) => p.id!==id));
+  // Load projects from sheet on startup
+  useEffect(() => {
+    loadProjectsFromSheet()
+      .then((data) => { if (Array.isArray(data) && data.length > 0) setProjects(data); else setProjects(initialProjects); })
+      .catch(() => setProjects(initialProjects))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Save projects to sheet whenever they change
+  useEffect(() => {
+    if (!loading) saveProjectsToSheet(projects).catch(console.error);
+  }, [projects, loading]);
+
+  const addProject = (p) => { setProjects((prev) => [p,...prev]); setShowNew(false); };
+  const updateProject = (p) => setProjects((prev) => prev.map((x) => x.id===p.id ? p : x));
+  const deleteProject = (id) => setProjects((prev) => prev.filter((p) => p.id!==id));
 
   const filtered = projects.filter((p) => {
     const matchesFilter = filter==="all"||(filter==="active"&&!p.finished)||(filter==="finished"&&p.finished);
     const matchesSearch = !search||p.name.toLowerCase().includes(search.toLowerCase())||(p.subRegion&&p.subRegion.toLowerCase().includes(search.toLowerCase()));
-    return matchesFilter && matchesSearch;
+    const matchesCar = carFilter==="all"||p.assignedTo===carFilter;
+    return matchesFilter && matchesSearch && matchesCar;
   });
+
+  const workProject = workMode ? projects.find((p) => p.id===workMode) : null;
+
+  if (loading) {
+    return (
+      <div style={{ minHeight:"100vh", background:"#0a0a0a", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Inter', system-ui, sans-serif" }}>
+        <div style={{ color:"#444", fontSize:14 }}>Loading projects…</div>
+      </div>
+    );
+  }
+
+  if (workProject) {
+    return (
+      <WorkMode
+        project={workProject}
+        onUpdate={updateProject}
+        onExit={() => setWorkMode(null)}
+      />
+    );
+  }
 
   return (
     <div style={{ minHeight:"100vh", background:"#0a0a0a", color:"#e0e0e0", fontFamily:"'Inter', system-ui, sans-serif", maxWidth:600, margin:"0 auto", padding:"0 0 40px" }}>
@@ -494,16 +960,32 @@ export default function App() {
           </button>
         </div>
         <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search projects..." style={{ ...inputStyle, marginBottom:10 }} />
-        <div style={{ display:"flex", gap:6 }}>
+        <div style={{ display:"flex", gap:6, marginBottom:8 }}>
           {["active","finished","all"].map((f) => (
             <button key={f} onClick={() => setFilter(f)} style={{ background:filter===f?"#e8f0e8":"none", color:filter===f?"#111":"#666", border:filter===f?"none":"1px solid #222", borderRadius:16, padding:"5px 14px", fontSize:12, cursor:"pointer", fontWeight:filter===f?700:400, textTransform:"capitalize" }}>{f}</button>
           ))}
         </div>
+        <div style={{ display:"flex", gap:6, alignItems:"center", justifyContent:"space-between" }}>
+          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+            <span style={{ color:"#444", fontSize:11, marginRight:2 }}>View:</span>
+            {["all","Car 1","Car 2"].map((c) => (
+              <button key={c} onClick={() => setCarFilter(c)} style={{ background:carFilter===c?"#1a2a3a":"none", color:carFilter===c?"#6aacf0":"#555", border:carFilter===c?"1px solid #2a4a6a":"1px solid #222", borderRadius:16, padding:"4px 12px", fontSize:12, cursor:"pointer", fontWeight:carFilter===c?700:400 }}>
+                {c==="all" ? "All cars" : c}
+              </button>
+            ))}
+          </div>
+          <div style={{ display:"flex", gap:6 }}>
+            <button onClick={() => { setShowTrips(!showTrips); setShowHours(false); }} style={{ background:showTrips?"#1a2a1a":"none", color:showTrips?"#4a9a4a":"#555", border:`1px solid ${showTrips?"#2a4a2a":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>🗺</button>
+            <button onClick={() => { setShowHours(!showHours); setShowTrips(false); }} style={{ background:showHours?"#1a2a3a":"none", color:showHours?"#6aacf0":"#555", border:`1px solid ${showHours?"#2a4a6a":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>⏱</button>
+          </div>
+        </div>
       </div>
       <div style={{ padding:"16px 16px 0" }}>
+        {showHours && <HoursTracker onClose={() => setShowHours(false)} />}
+        {showTrips && <TripsView projects={projects} onClose={() => setShowTrips(false)} />}
         {showNew && <NewProjectForm onAdd={addProject} onCancel={() => setShowNew(false)} />}
         {filtered.length===0 && <div style={{ textAlign:"center", color:"#444", padding:"40px 20px", fontSize:14 }}>{search?"No projects match your search":"No projects here yet"}</div>}
-        {filtered.map((p) => <ProjectCard key={p.id} project={p} onUpdate={updateProject} onDelete={deleteProject} />)}
+        {filtered.map((p) => <ProjectCard key={p.id} project={p} onUpdate={updateProject} onDelete={deleteProject} onStartWork={() => setWorkMode(p.id)} />)}
       </div>
     </div>
   );
