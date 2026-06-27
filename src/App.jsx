@@ -100,8 +100,8 @@ async function loadComments(projectId) {
   const res = await fetch(APPS_SCRIPT_URL + "?action=getComments");
   if (!res.ok) return [];
   const all = await res.json();
-  return all.filter((r) => r[1] === projectId).map((r) => ({
-    timestamp: r[0], projectId: r[1], name: r[2], message: r[3],
+  return all.filter((r) => String(r[1]) === String(projectId)).map((r) => ({
+    timestamp: r[0], name: r[2], message: r[3],
   }));
 }
 
@@ -624,7 +624,7 @@ function CommentsSection({ project }) {
   const [posting, setPosting] = useState(false);
 
   useEffect(() => {
-    loadComments(String(project.id))
+    loadComments(project.id)
       .then(setComments)
       .catch(() => setComments([]))
       .finally(() => setLoading(false));
@@ -635,7 +635,7 @@ function CommentsSection({ project }) {
     localStorage.setItem("rml_name", name.trim());
     setPosting(true);
     const now = new Date().toLocaleString("en-GB", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" });
-    const entry = { timestamp: now, projectId: String(project.id), name: name.trim(), message: message.trim() };
+    const entry = { timestamp: now, name: name.trim(), message: message.trim(), projectId: String(project.id) };
     setComments((prev) => [...prev, entry]);
     setMessage("");
     await postComment([now, String(project.id), name.trim(), message.trim()]).catch(console.error);
