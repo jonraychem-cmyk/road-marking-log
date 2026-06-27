@@ -1,5 +1,56 @@
 import { useState, useCallback, useEffect } from "react";
 
+// ── PIN Lock ──────────────────────────────────────────────────────────────────
+const CORRECT_PIN = "180583";
+
+function PinScreen({ onUnlock }) {
+  const [entered, setEntered] = useState("");
+  const [shake, setShake] = useState(false);
+
+  const press = (val) => {
+    if (entered.length >= CORRECT_PIN.length) return;
+    const next = entered + val;
+    setEntered(next);
+    if (next.length === CORRECT_PIN.length) {
+      if (next === CORRECT_PIN) {
+        localStorage.setItem("rml_auth", "1");
+        onUnlock();
+      } else {
+        setShake(true);
+        setTimeout(() => { setShake(false); setEntered(""); }, 600);
+      }
+    }
+  };
+
+  const del = () => setEntered(entered.slice(0, -1));
+
+  const dots = Array.from({ length: CORRECT_PIN.length }, (_, i) => (
+    <div key={i} style={{ width:14, height:14, borderRadius:"50%", background: i < entered.length ? "#e8f0e8" : "transparent", border:"2px solid " + (i < entered.length ? "#e8f0e8" : "#444"), transition:"background 0.1s" }} />
+  ));
+
+  const keys = [["1","2","3"],["4","5","6"],["7","8","9"],["","0","\u232b"]];
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#0a0a0a", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", fontFamily:"'Inter', system-ui, sans-serif", padding:24 }}>
+      <div style={{ marginBottom:32, textAlign:"center" }}>
+        <div style={{ fontWeight:800, fontSize:22, letterSpacing:-0.5, color:"#e0e0e0", marginBottom:6 }}>Road Marking Log</div>
+        <div style={{ color:"#444", fontSize:13 }}>Enter PIN to continue</div>
+      </div>
+      <div style={{ display:"flex", gap:16, marginBottom:40, animation: shake ? "shake 0.5s" : "none" }}>
+        {dots}
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 72px)", gap:12 }}>
+        {keys.flat().map((k, i) => (
+          <button key={i} onClick={() => k === "\u232b" ? del() : k ? press(k) : null} style={{ width:72, height:72, borderRadius:16, background: k ? "#1a1a1a" : "transparent", border: k ? "1px solid #2a2a2a" : "none", color: k === "\u232b" ? "#666" : "#e0e0e0", fontSize: k === "\u232b" ? 20 : 26, fontWeight:600, cursor: k ? "pointer" : "default", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            {k}
+          </button>
+        ))}
+      </div>
+      <style>{"@keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 40%{transform:translateX(8px)} 60%{transform:translateX(-8px)} 80%{transform:translateX(8px)} }"}</style>
+    </div>
+  );
+}
+
 // ── Google Sheets via Apps Script ────────────────────────────────────────────
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx9XY9aVWNCBdH0fIzz5dFJQKiF1kNHx5Qspn_UrFvrF6-7J9-Obh5lCETvnh3Lw0_XZg/exec";
 
@@ -34,6 +85,24 @@ async function appendHoursToSheet(row) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type: "hours", row }),
   });
+}
+
+async function postComment(row) {
+  await fetch(APPS_SCRIPT_URL, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "comment", row }),
+  });
+}
+
+async function loadComments(projectId) {
+  const res = await fetch(APPS_SCRIPT_URL + "?action=getComments");
+  if (!res.ok) return [];
+  const all = await res.json();
+  return all.filter((r) => r[1] === projectId).map((r) => ({
+    timestamp: r[0], projectId: r[1], name: r[2], message: r[3],
+  }));
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -546,6 +615,75 @@ function LocationLog({ location, project, onUpdate }) {
   );
 }
 
+// ── Comments Section ─────────────────────────────────────────────────────────
+function CommentsSection({ project }) {
+  const [comments, setComments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState(() => localStorage.getItem("rml_name") || "");
+  const [message, setMessage] = useState("");
+  const [posting, setPosting] = useState(false);
+
+  useEffect(() => {
+    loadComments(String(project.id))
+      .then(setComments)
+      .catch(() => setComments([]))
+      .finally(() => setLoading(false));
+  }, [project.id]);
+
+  const post = async () => {
+    if (!message.trim() || !name.trim()) return;
+    localStorage.setItem("rml_name", name.trim());
+    setPosting(true);
+    const now = new Date().toLocaleString("en-GB", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" });
+    const entry = { timestamp: now, projectId: String(project.id), name: name.trim(), message: message.trim() };
+    setComments((prev) => [...prev, entry]);
+    setMessage("");
+    await postComment([now, String(project.id), name.trim(), message.trim()]).catch(console.error);
+    setPosting(false);
+  };
+
+  return (
+    <div style={{ marginBottom:14 }}>
+      <div style={sectionLabel}>Comments</div>
+
+      {loading && <div style={{ color:"#444", fontSize:13, marginBottom:8 }}>Loading…</div>}
+
+      {!loading && comments.length === 0 && (
+        <div style={{ color:"#444", fontSize:13, marginBottom:8 }}>No comments yet</div>
+      )}
+
+      {comments.map((c, i) => (
+        <div key={i} style={{ background:"#111", border:"1px solid #222", borderRadius:8, padding:"10px 12px", marginBottom:8 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:4 }}>
+            <span style={{ color:"#6aacf0", fontSize:13, fontWeight:600 }}>{c.name}</span>
+            <span style={{ color:"#444", fontSize:11 }}>{c.timestamp}</span>
+          </div>
+          <div style={{ color:"#ccc", fontSize:13, lineHeight:1.5 }}>{c.message}</div>
+        </div>
+      ))}
+
+      <div style={{ marginTop:8 }}>
+        {!localStorage.getItem("rml_name") && (
+          <div style={{ marginBottom:8 }}>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="Your name" style={{ ...inputStyle, fontSize:13 }} />
+          </div>
+        )}
+        <div style={{ display:"flex", gap:6 }}>
+          <input type="text" value={message} onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={(e) => e.key==="Enter" && post()}
+            placeholder="Write a comment…"
+            style={{ ...inputStyle, flex:1, fontSize:13 }} />
+          <button onClick={post} disabled={!message.trim()||!name.trim()||posting}
+            style={{ ...btnPrimary, padding:"8px 14px", opacity:message.trim()&&name.trim()?1:0.4 }}>
+            {posting ? "…" : "Send"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Hours Tracker ────────────────────────────────────────────────────────────
 function roundDown15(date) {
   const d = new Date(date);
@@ -836,6 +974,11 @@ function ProjectCard({ project, onUpdate, onDelete, onStartWork }) {
             <ContactSection contacts={project.contacts||[]} onUpdate={(contacts) => onUpdate({ ...project, contacts })} />
           </div>
           <DrawingsSection drawings={project.drawings||[]} onUpdate={(drawings) => onUpdate({ ...project, drawings })} />
+
+          <div style={{ borderTop:"1px solid #1a1a1a", marginBottom:12 }} />
+
+          <CommentsSection project={project} />
+
           <div style={{ borderTop:"1px solid #1a1a1a", marginBottom:12 }} />
 
           {project.locations.map((loc) => (
@@ -891,6 +1034,7 @@ function NewProjectForm({ onAdd, onCancel }) {
 
 // ── App Root ──────────────────────────────────────────────────────────────────
 export default function App() {
+  const [authed, setAuthed] = useState(() => localStorage.getItem("rml_auth") === "1");
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
@@ -926,6 +1070,10 @@ export default function App() {
   });
 
   const workProject = workMode ? projects.find((p) => p.id===workMode) : null;
+
+  if (!authed) {
+    return <PinScreen onUnlock={() => setAuthed(true)} />;
+  }
 
   if (loading) {
     return (
