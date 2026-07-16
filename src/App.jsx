@@ -132,9 +132,9 @@ const VEHICLE_ICONS = {
 function VehicleBadge({ name, active }) {
   const v = VEHICLE_ICONS[name];
   return (
-    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, cursor:"pointer",
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, cursor:"pointer", width:"100%",
       background:active?"#1a2a3a":"none", border:`1px solid ${active?"#2a4a6a":"#222"}`,
-      borderRadius:10, padding:"6px 10px", minWidth:52 }}>
+      borderRadius:10, padding:"6px 4px" }}>
       <span style={{ fontSize:18 }}>{v ? v.dot : "🚗"}</span>
       <span style={{ fontSize:10, color:active?"#6aacf0":"#555", fontWeight:active?700:400, whiteSpace:"nowrap" }}>{name}</span>
     </div>
@@ -1273,8 +1273,9 @@ function EditProjectForm({ project, onSave, onCancel }) {
 }
 
 // ── Project Card ──────────────────────────────────────────────────────────────
-function ProjectCard({ project, onUpdate, onDelete, onStartWork }) {
+function ProjectCard({ project, onUpdate, onDelete, onStartWork, onMoveUp, onMoveDown, isFirst, isLast }) {
   const [expanded, setExpanded] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [newLocationName, setNewLocationName] = useState("");
   const [showAddLocation, setShowAddLocation] = useState(false);
   const [editingProject, setEditingProject] = useState(false);
@@ -1290,29 +1291,59 @@ function ProjectCard({ project, onUpdate, onDelete, onStartWork }) {
   const checklist = project.checklist||[];
   const checkDone = checklist.filter((i) => i.done).length;
 
+  // Location summary for collapsed view
+  const locSummary = project.locations.map((l) => {
+    const count = l.workItems.length;
+    return count > 0 ? `${l.name} (${count})` : l.name;
+  }).join(" · ");
+
   return (
-    <div style={{ background:"#161616", border:project.finished?"1px solid #2a3a2a":"1px solid #2a2a2a", borderRadius:10, marginBottom:12, overflow:"hidden" }}>
-      <div onClick={() => setExpanded(!expanded)} style={{ padding:"14px 16px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div>
-          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-              <span style={{ fontWeight:700, color:project.finished?"#4a7a4a":"#e0e0e0", fontSize:15 }}>{project.name}</span>
-              <button onClick={(e) => { e.stopPropagation(); setEditingProject(!editingProject); }} style={{ background:"none", border:"none", color:"#444", cursor:"pointer", fontSize:12, padding:"0 2px" }}>✏️</button>
-            </div>
-          <div style={{ color:"#555", fontSize:12, marginTop:2 }}>
-            {project.region}{project.subRegion?" > "+project.subRegion:""}
-            {project.assignedTo?" · "+project.assignedTo:""}
-            {" · "}{totalItems} item{totalItems!==1?"s":""}
-            {contactCount>0?" · "+contactCount+" contact"+(contactCount!==1?"s":""):""}
-            {checklist.length>0?` · ${checkDone}/${checklist.length} checked`:""}
-          </div>
+    <div style={{ background:"#161616", border:project.finished?"1px solid #2a3a2a":"1px solid #2a2a2a", borderRadius:10, marginBottom:collapsed?6:12, overflow:"hidden" }}>
+      {/* Card header */}
+      <div style={{ padding:"10px 12px", display:"flex", alignItems:"center", gap:8 }}>
+
+        {/* Reorder arrows */}
+        <div style={{ display:"flex", flexDirection:"column", gap:2, flexShrink:0 }}>
+          <button onClick={(e) => { e.stopPropagation(); onMoveUp(); }} disabled={isFirst}
+            style={{ background:"none", border:"none", color:isFirst?"#2a2a2a":"#555", cursor:isFirst?"default":"pointer", fontSize:13, padding:"1px 4px", lineHeight:1 }}>▲</button>
+          <button onClick={(e) => { e.stopPropagation(); onMoveDown(); }} disabled={isLast}
+            style={{ background:"none", border:"none", color:isLast?"#2a2a2a":"#555", cursor:isLast?"default":"pointer", fontSize:13, padding:"1px 4px", lineHeight:1 }}>▼</button>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          {project.finished && <span style={{ background:"#1a3a1a", color:"#4a9a4a", borderRadius:4, padding:"2px 8px", fontSize:11 }}>Done</span>}
-          <span style={{ color:"#555", fontSize:18 }}>{expanded?"∧":"∨"}</span>
+
+        {/* Main info — tap to expand/collapse */}
+        <div onClick={() => { if (!collapsed) setExpanded(!expanded); }} style={{ flex:1, cursor:"pointer", minWidth:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <span style={{ fontWeight:700, color:project.finished?"#4a7a4a":"#e0e0e0", fontSize:15, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{project.name}</span>
+            <button onClick={(e) => { e.stopPropagation(); setEditingProject(!editingProject); }} style={{ background:"none", border:"none", color:"#444", cursor:"pointer", fontSize:12, padding:"0 2px", flexShrink:0 }}>✏️</button>
+          </div>
+          {collapsed ? (
+            <div style={{ color:"#444", fontSize:11, marginTop:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+              {project.assignedTo && <span>{project.assignedTo} · </span>}
+              <span>{totalItems} stk</span>
+              {locSummary && <span> · {locSummary}</span>}
+            </div>
+          ) : (
+            <div style={{ color:"#555", fontSize:12, marginTop:2 }}>
+              {project.region}{project.subRegion?" > "+project.subRegion:""}
+              {project.assignedTo?" · "+project.assignedTo:""}
+              {" · "}{totalItems} item{totalItems!==1?"s":""}
+              {contactCount>0?" · "+contactCount+" contact"+(contactCount!==1?"s":""):""}
+              {checklist.length>0?` · ${checkDone}/${checklist.length} checked`:""}
+            </div>
+          )}
+        </div>
+
+        {/* Right side controls */}
+        <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+          {project.finished && <span style={{ background:"#1a3a1a", color:"#4a9a4a", borderRadius:4, padding:"2px 6px", fontSize:11 }}>Done</span>}
+          <button onClick={(e) => { e.stopPropagation(); setCollapsed(!collapsed); setExpanded(false); }}
+            style={{ background:"none", border:"1px solid #2a2a2a", borderRadius:6, color:"#555", cursor:"pointer", fontSize:11, padding:"3px 8px" }}>
+            {collapsed ? "▼ Opna" : "▲ Loka"}
+          </button>
         </div>
       </div>
 
-      {expanded && (
+      {!collapsed && expanded && (
         <div style={{ padding:"0 16px 16px" }}>
           {editingProject && (
             <EditProjectForm
@@ -1418,6 +1449,17 @@ export default function App() {
   const addProject = (p) => { setProjects((prev) => [p,...prev]); setShowNew(false); };
   const updateProject = (p) => setProjects((prev) => prev.map((x) => x.id===p.id ? p : x));
   const deleteProject = (id) => setProjects((prev) => prev.filter((p) => p.id!==id));
+  const moveProject = (id, dir) => {
+    setProjects((prev) => {
+      const idx = prev.findIndex((p) => p.id===id);
+      if (idx < 0) return prev;
+      const next = [...prev];
+      const swap = idx + dir;
+      if (swap < 0 || swap >= next.length) return prev;
+      [next[idx], next[swap]] = [next[swap], next[idx]];
+      return next;
+    });
+  };
 
   const filtered = projects.filter((p) => {
     const matchesFilter = filter==="all"||(filter==="active"&&!p.finished)||(filter==="finished"&&p.finished);
@@ -1471,15 +1513,15 @@ export default function App() {
           ))}
         </div>
         {/* Row 1 — Vehicle filter */}
-        <div style={{ display:"flex", gap:6, marginBottom:8, overflowX:"auto", paddingBottom:2 }}>
-          <div onClick={() => setCarFilter("all")} style={{ cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+        <div style={{ display:"flex", gap:6, marginBottom:8, paddingBottom:2 }}>
+          <div onClick={() => setCarFilter("all")} style={{ cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, flex:1,
             background:carFilter==="all"?"#1a2a3a":"none", border:`1px solid ${carFilter==="all"?"#2a4a6a":"#222"}`,
-            borderRadius:10, padding:"6px 10px", minWidth:52, flexShrink:0 }}>
+            borderRadius:10, padding:"6px 4px" }}>
             <span style={{ fontSize:18 }}>🚗</span>
             <span style={{ fontSize:10, color:carFilter==="all"?"#6aacf0":"#555", fontWeight:carFilter==="all"?700:400 }}>Allir</span>
           </div>
           {(JSON.parse(localStorage.getItem("rml_cars")||"null")||DEFAULT_CARS).filter(c=>c!=="Óúthlutað").map((c) => (
-            <div key={c} onClick={() => setCarFilter(c)} style={{ flexShrink:0 }}>
+            <div key={c} onClick={() => setCarFilter(c)} style={{ flex:1 }}>
               <VehicleBadge name={c} active={carFilter===c} />
             </div>
           ))}
@@ -1499,7 +1541,14 @@ export default function App() {
         {showTrips && <TripsView projects={projects} onClose={() => setShowTrips(false)} />}
         {showNew && <NewProjectForm onAdd={addProject} onCancel={() => setShowNew(false)} />}
         {filtered.length===0 && <div style={{ textAlign:"center", color:"#444", padding:"40px 20px", fontSize:14 }}>{search?"No projects match your search":"No projects here yet"}</div>}
-        {filtered.map((p) => <ProjectCard key={p.id} project={p} onUpdate={updateProject} onDelete={deleteProject} onStartWork={() => setWorkMode(p.id)} />)}
+        {filtered.map((p, i) => (
+          <ProjectCard key={p.id} project={p} onUpdate={updateProject} onDelete={deleteProject}
+            onStartWork={() => setWorkMode(p.id)}
+            onMoveUp={() => moveProject(p.id, -1)}
+            onMoveDown={() => moveProject(p.id, 1)}
+            isFirst={i===0} isLast={i===filtered.length-1}
+          />
+        ))}
       </div>
     </div>
   );
