@@ -316,22 +316,55 @@ function ContactSection({ contacts=[], onUpdate }) {
 }
 
 // ── Þríhyrningar Mode ────────────────────────────────────────────────────────
-function TriangleMode({ onDone, onCancel }) {
-  const [count, setCount] = useState(0);
-  const [stops, setStops] = useState([]); // [{stop, count}]
+const TRI_KEY = "rml_triangle_session";
 
-  const adjust = (n) => setCount(Math.max(0, Math.min(10, count + n)));
+function TriangleMode({ onDone, onCancel }) {
+  const [count, setCount] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(TRI_KEY))?.count || 0; } catch { return 0; }
+  });
+  const [stops, setStops] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(TRI_KEY))?.stops || []; } catch { return []; }
+  });
+
+  // Persist every change to localStorage
+  const persist = (newCount, newStops) => {
+    localStorage.setItem(TRI_KEY, JSON.stringify({ count: newCount, stops: newStops }));
+  };
+
+  const adjust = (n) => {
+    const next = Math.max(0, Math.min(10, count + n));
+    setCount(next);
+    persist(next, stops);
+  };
+
+  const setCountVal = (n) => {
+    setCount(n);
+    persist(n, stops);
+  };
+
   const total = stops.reduce((s, x) => s + x.count, 0);
+
+  // Block pull-to-refresh on mobile while counter is open
+  useEffect(() => {
+    const prevent = (e) => { if (e.touches && e.touches[0].clientY > 0) e.preventDefault(); };
+    document.addEventListener("touchmove", prevent, { passive: false });
+    return () => document.removeEventListener("touchmove", prevent);
+  }, []);
 
   const logStop = () => {
     if (count === 0) return;
-    setStops([...stops, { stop: stops.length + 1, count }]);
+    const newStops = [...stops, { stop: stops.length + 1, count }];
+    setStops(newStops);
     setCount(0);
+    persist(0, newStops);
   };
 
   const finish = () => {
-    if (stops.length === 0 && count === 0) { onCancel(); return; }
-    // If there's an unlogged count, log it first
+    if (stops.length === 0 && count === 0) { 
+      localStorage.removeItem(TRI_KEY);
+      onCancel(); 
+      return; 
+    }
     const finalStops = count > 0 ? [...stops, { stop: stops.length + 1, count }] : stops;
     const finalTotal = finalStops.reduce((s, x) => s + x.count, 0);
     const stopSummary = finalStops.map((s) => `Stop ${s.stop}: ${s.count}`).join(", ");
@@ -342,11 +375,19 @@ function TriangleMode({ onDone, onCancel }) {
       stops: finalStops,
       label: `Þríhyrningar: ${finalTotal} total (${stopSummary})`,
     };
+    localStorage.removeItem(TRI_KEY);
     onDone(item);
   };
 
+  const wasRestored = stops.length > 0 || count > 0;
+
   return (
     <div style={{ background:"#1a1a1a", border:"1px solid #333", borderRadius:8, padding:16, marginTop:8 }}>
+      {wasRestored && (
+        <div style={{ background:"#1a2a1a", border:"1px solid #2a4a2a", borderRadius:6, padding:"6px 10px", marginBottom:10, color:"#4a9a4a", fontSize:12 }}>
+          ↩ Session restored after refresh
+        </div>
+      )}
       {/* Header */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:14 }}>
         <div style={{ fontWeight:700, color:"#e0e0e0", fontSize:14 }}>Þríhyrningar</div>
@@ -385,7 +426,7 @@ function TriangleMode({ onDone, onCancel }) {
       {/* Quick tap buttons 1-10 */}
       <div style={{ display:"flex", flexWrap:"wrap", gap:6, justifyContent:"center", marginBottom:14 }}>
         {[1,2,3,4,5,6,7,8,9,10].map((n) => (
-          <button key={n} onClick={() => setCount(n)} style={{ width:38, height:38, borderRadius:8, background:count===n?"#e8f0e8":"#111", color:count===n?"#111":"#666", border:`1px solid ${count===n?"#e8f0e8":"#2a2a2a"}`, fontSize:14, fontWeight:count===n?700:400, cursor:"pointer" }}>
+          <button key={n} onClick={() => setCountVal(n)} style={{ width:38, height:38, borderRadius:8, background:count===n?"#e8f0e8":"#111", color:count===n?"#111":"#666", border:`1px solid ${count===n?"#e8f0e8":"#2a2a2a"}`, fontSize:14, fontWeight:count===n?700:400, cursor:"pointer" }}>
             {n}
           </button>
         ))}
@@ -684,6 +725,65 @@ function CommentsSection({ project }) {
   );
 }
 
+// ── Private Checklist ────────────────────────────────────────────────────────
+const DEFAULT_ITEMS = [
+  "Charger", "Powerbank", "Supplements", "Underwear",
+  "Toiletry bag", "Swimsuit", "Headphones", "Snacks",
+];
+
+function PrivateChecklist({ onClose }) {
+  const [items, setItems] = useState(() => {
+    try {
+      const saved = localStorage.getItem("rml_private_checklist");
+      return saved ? JSON.parse(saved) : DEFAULT_ITEMS.map((label, i) => ({ id:i, label, done:false }));
+    } catch { return DEFAULT_ITEMS.map((label, i) => ({ id:i, label, done:false })); }
+  });
+  const [newItem, setNewItem] = useState("");
+
+  const save = (updated) => {
+    setItems(updated);
+    localStorage.setItem("rml_private_checklist", JSON.stringify(updated));
+  };
+
+  const toggle = (id) => save(items.map((i) => i.id===id ? {...i, done:!i.done} : i));
+  const remove = (id) => save(items.filter((i) => i.id!==id));
+  const add = () => {
+    if (!newItem.trim()) return;
+    save([...items, { id:Date.now(), label:newItem.trim(), done:false }]);
+    setNewItem("");
+  };
+  const reset = () => save(items.map((i) => ({...i, done:false})));
+
+  const doneCount = items.filter((i) => i.done).length;
+
+  return (
+    <div style={{ background:"#161616", border:"1px solid #2a2a2a", borderRadius:10, marginBottom:16, overflow:"hidden" }}>
+      <div style={{ padding:"14px 16px", borderBottom:"1px solid #1a1a1a", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div style={{ fontWeight:700, fontSize:15 }}>🎒 My Checklist <span style={{ color:"#555", fontSize:12, fontWeight:400 }}>{doneCount}/{items.length}</span></div>
+        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+          {doneCount > 0 && <button onClick={reset} style={{ background:"none", border:"none", color:"#555", fontSize:12, cursor:"pointer" }}>Reset</button>}
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#555", fontSize:18, cursor:"pointer" }}>×</button>
+        </div>
+      </div>
+      <div style={{ padding:"14px 16px" }}>
+        {items.map((item) => (
+          <div key={item.id} style={{ display:"flex", alignItems:"center", gap:10, background:item.done?"#0f1a0f":"#111", border:`1px solid ${item.done?"#1e3a1e":"#222"}`, borderRadius:7, padding:"9px 12px", marginBottom:6 }}>
+            <div onClick={() => toggle(item.id)} style={{ width:18, height:18, borderRadius:4, flexShrink:0, cursor:"pointer", border:`2px solid ${item.done?"#4a9a4a":"#444"}`, background:item.done?"#1a4a1a":"transparent", display:"flex", alignItems:"center", justifyContent:"center" }}>
+              {item.done && <span style={{ color:"#4a9a4a", fontSize:12 }}>✓</span>}
+            </div>
+            <span style={{ flex:1, fontSize:13, color:item.done?"#4a7a4a":"#ccc", textDecoration:item.done?"line-through":"none" }}>{item.label}</span>
+            <button onClick={() => remove(item.id)} style={{ background:"none", border:"none", color:"#3a3a3a", cursor:"pointer", fontSize:15, padding:"0 2px" }}>×</button>
+          </div>
+        ))}
+        <div style={{ display:"flex", gap:6, marginTop:8 }}>
+          <input type="text" value={newItem} onChange={(e) => setNewItem(e.target.value)} onKeyDown={(e) => e.key==="Enter" && add()} placeholder="Add item…" style={{ ...inputStyle, flex:1, fontSize:13, padding:"6px 10px" }} />
+          <button onClick={add} style={{ ...btnPrimary, padding:"6px 12px" }}>+</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Hours Tracker ────────────────────────────────────────────────────────────
 function roundDown15(date) {
   const d = new Date(date);
@@ -707,7 +807,8 @@ function diffHours(a, b) {
 
 function HoursTracker({ onClose }) {
   const [name, setName] = useState("");
-  const [clockedIn, setClockedIn] = useState(null); // { raw, rounded, name }
+  const [clockedIn, setClockedIn] = useState(null);
+  const [breaks, setBreaks] = useState(0); // 0, 1, or 2
   const [log, setLog] = useState([]);
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
@@ -725,16 +826,19 @@ function HoursTracker({ onClose }) {
     const roundedOut = roundUp15(now);
     const hours = diffHours(clockedIn.rounded, roundedOut);
     const today = now.toLocaleDateString("en-GB");
+    const breakNote = breaks === 1 ? "Mínus matur" : breaks === 2 ? "Mínus matur x2" : "";
     const entry = {
       date: today,
       name: clockedIn.name,
       clockIn: fmtTime(clockedIn.rounded),
       clockOut: fmtTime(roundedOut),
       hours,
+      breakNote,
     };
     setLog([...log, entry]);
     setSyncing(true);
-    appendHoursToSheet([entry.date, entry.name, entry.clockIn, entry.clockOut, entry.hours]).catch(console.error);
+    appendHoursToSheet([entry.date, entry.name, entry.clockIn, entry.clockOut, entry.hours, breakNote]).catch(console.error);
+    setBreaks(0);
     setTimeout(() => { setSyncing(false); setSynced(true); }, 1000);
     setClockedIn(null);
   };
@@ -761,6 +865,19 @@ function HoursTracker({ onClose }) {
             <div style={{ color:"#555", fontSize:12, marginBottom:4 }}>{clockedIn.name} · clocked in</div>
             <div style={{ fontSize:36, fontWeight:800, color:"#4a9a4a", marginBottom:2 }}>{fmtTime(clockedIn.rounded)}</div>
             <div style={{ color:"#444", fontSize:11, marginBottom:16 }}>rounded from {fmtTime(clockedIn.raw)}</div>
+
+            {/* Break selector */}
+            <div style={{ marginBottom:14 }}>
+              <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:8 }}>Break taken?</div>
+              <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
+                {[{val:0,label:"None"},{val:1,label:"Matur"},{val:2,label:"Matur x2"}].map((b) => (
+                  <button key={b.val} onClick={() => setBreaks(b.val)} style={{ background:breaks===b.val?"#e8f0e8":"#1a1a1a", color:breaks===b.val?"#111":"#666", border:`1px solid ${breaks===b.val?"#e8f0e8":"#333"}`, borderRadius:8, padding:"7px 14px", fontSize:12, fontWeight:breaks===b.val?700:400, cursor:"pointer" }}>
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <button onClick={clockOut} style={{ background:"#e8f0e8", color:"#111", border:"none", borderRadius:8, padding:"12px 32px", fontSize:14, fontWeight:700, cursor:"pointer", width:"100%" }}>
               Clock out
             </button>
@@ -770,10 +887,13 @@ function HoursTracker({ onClose }) {
         {log.length > 0 && (
           <div style={{ marginTop:14, borderTop:"1px solid #1a1a1a", paddingTop:12 }}>
             {log.map((e, i) => (
-              <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:"#888", marginBottom:6 }}>
-                <span>{e.name}</span>
-                <span>{e.clockIn} → {e.clockOut}</span>
-                <span style={{ color:"#4a9a4a" }}>{e.hours}h</span>
+              <div key={i} style={{ marginBottom:8 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:"#888" }}>
+                  <span>{e.name}</span>
+                  <span>{e.clockIn} → {e.clockOut}</span>
+                  <span style={{ color:"#4a9a4a" }}>{e.hours}h</span>
+                </div>
+                {e.breakNote && <div style={{ color:"#7a5a2a", fontSize:11, marginTop:2 }}>{e.breakNote}</div>}
               </div>
             ))}
             {syncing && <div style={{ color:"#6aacf0", fontSize:11, textAlign:"center" }}>Syncing…</div>}
@@ -1044,6 +1164,7 @@ export default function App() {
   const [workMode, setWorkMode] = useState(null);
   const [showHours, setShowHours] = useState(false);
   const [showTrips, setShowTrips] = useState(false);
+  const [showPrivate, setShowPrivate] = useState(false);
 
   // Load projects from sheet on startup
   useEffect(() => {
@@ -1123,12 +1244,14 @@ export default function App() {
             ))}
           </div>
           <div style={{ display:"flex", gap:6 }}>
-            <button onClick={() => { setShowTrips(!showTrips); setShowHours(false); }} style={{ background:showTrips?"#1a2a1a":"none", color:showTrips?"#4a9a4a":"#555", border:`1px solid ${showTrips?"#2a4a2a":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>🗺</button>
-            <button onClick={() => { setShowHours(!showHours); setShowTrips(false); }} style={{ background:showHours?"#1a2a3a":"none", color:showHours?"#6aacf0":"#555", border:`1px solid ${showHours?"#2a4a6a":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>⏱</button>
+            <button onClick={() => { setShowTrips(!showTrips); setShowHours(false); setShowPrivate(false); }} style={{ background:showTrips?"#1a2a1a":"none", color:showTrips?"#4a9a4a":"#555", border:`1px solid ${showTrips?"#2a4a2a":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>🗺</button>
+            <button onClick={() => { setShowHours(!showHours); setShowTrips(false); setShowPrivate(false); }} style={{ background:showHours?"#1a2a3a":"none", color:showHours?"#6aacf0":"#555", border:`1px solid ${showHours?"#2a4a6a":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>⏱</button>
+            <button onClick={() => { setShowPrivate(!showPrivate); setShowHours(false); setShowTrips(false); }} style={{ background:showPrivate?"#2a1a2a":"none", color:showPrivate?"#a06ac0":"#555", border:`1px solid ${showPrivate?"#4a2a5a":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>🎒</button>
           </div>
         </div>
       </div>
       <div style={{ padding:"16px 16px 0" }}>
+        {showPrivate && <PrivateChecklist onClose={() => setShowPrivate(false)} />}
         {showHours && <HoursTracker onClose={() => setShowHours(false)} />}
         {showTrips && <TripsView projects={projects} onClose={() => setShowTrips(false)} />}
         {showNew && <NewProjectForm onAdd={addProject} onCancel={() => setShowNew(false)} />}
