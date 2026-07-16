@@ -120,8 +120,25 @@ const STENCIL_OPTIONS = ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkal
 const ZEBRA_SIZES = ["50x300","50x250","50x240","50x200","50x120","Custom"];
 const DEFAULT_WORK_TYPES = ["Línur","Miðlínur","Formerking","Hvítar línur + formerking","Stencil","Blátt ferningur (Fatlaðir)","Grænt ferningur (Rafhlöðsla)","Gangbraut","Þríhyrningar"];
 const WORK_TYPES = DEFAULT_WORK_TYPES;
-const DEFAULT_CARS = ["Bíll 1","Bíll 2","Óúthlutað"];
+const DEFAULT_CARS = ["Sprinter","Renault","Iveco","KK","Óúthlutað"];
 const CARS = DEFAULT_CARS;
+const VEHICLE_ICONS = {
+  "Sprinter": { dot:"⚫", label:"Sprinter" },
+  "Renault":  { dot:"🔴", label:"Renault" },
+  "Iveco":    { dot:"⚫", label:"Iveco" },
+  "KK":       { dot:"⚪", label:"KK" },
+};
+function VehicleBadge({ name, active }) {
+  const v = VEHICLE_ICONS[name];
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, cursor:"pointer",
+      background:active?"#1a2a3a":"none", border:`1px solid ${active?"#2a4a6a":"#222"}`,
+      borderRadius:10, padding:"6px 10px", minWidth:52 }}>
+      <span style={{ fontSize:18 }}>{v ? v.dot : "🚗"}</span>
+      <span style={{ fontSize:10, color:active?"#6aacf0":"#555", fontWeight:active?700:400, whiteSpace:"nowrap" }}>{name}</span>
+    </div>
+  );
+}
 const CHECKLIST_PRESETS = {
   "Stencils": ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkall","Hjólhýsi","Hjól"],
   "Þríhyrningar": ["Þríhyrningar (shark's teeth)"],
@@ -1207,18 +1224,59 @@ function WorkMode({ project, onUpdate, onExit }) {
   );
 }
 
+// ── Edit Project Form ─────────────────────────────────────────────────────────
+function EditProjectForm({ project, onSave, onCancel }) {
+  const savedRegions = JSON.parse(localStorage.getItem("rml_regions")||"null") || DEFAULT_REGIONS;
+  const savedSubRegions = JSON.parse(localStorage.getItem("rml_subregions")||"null") || DEFAULT_SUB_REGIONS;
+  const savedCars = JSON.parse(localStorage.getItem("rml_cars")||"null") || DEFAULT_CARS;
+
+  const [name, setName] = useState(project.name);
+  const [region, setRegion] = useState(project.region || savedRegions[0]);
+  const [subRegion, setSubRegion] = useState(project.subRegion || "");
+  const [assignedTo, setAssignedTo] = useState(project.assignedTo || "");
+
+  const save = () => {
+    if (!name.trim()) return;
+    onSave({ ...project, name:name.trim(), region, subRegion, assignedTo });
+  };
+
+  return (
+    <div style={{ background:"#1a1a1a", border:"1px solid #333", borderRadius:8, padding:14, marginBottom:12 }}>
+      <div style={{ fontWeight:600, color:"#e0e0e0", fontSize:13, marginBottom:12 }}>Breyta verkefni</div>
+      <div style={{ marginBottom:10 }}><label style={labelStyle}>Nafn verkefnis</label><input type="text" value={name} onChange={(e)=>setName(e.target.value)} style={inputStyle} /></div>
+      <div style={{ marginBottom:10 }}><label style={labelStyle}>Svæði</label>
+        <select value={region} onChange={(e)=>{setRegion(e.target.value);setSubRegion("");}} style={selectStyle}>
+          {savedRegions.map((r)=><option key={r}>{r}</option>)}
+        </select>
+      </div>
+      {savedSubRegions[region]?.length > 0 && (
+        <div style={{ marginBottom:10 }}><label style={labelStyle}>Bær</label>
+          <select value={subRegion} onChange={(e)=>setSubRegion(e.target.value)} style={selectStyle}>
+            <option value="">Ekkert</option>
+            {savedSubRegions[region].map((s)=><option key={s}>{s}</option>)}
+          </select>
+        </div>
+      )}
+      <div style={{ marginBottom:12 }}><label style={labelStyle}>Úthlutað á</label>
+        <select value={assignedTo} onChange={(e)=>setAssignedTo(e.target.value)} style={selectStyle}>
+          <option value="">Óúthlutað</option>
+          {savedCars.map((c)=><option key={c}>{c}</option>)}
+        </select>
+      </div>
+      <div style={{ display:"flex", gap:8 }}>
+        <button onClick={save} style={btnPrimary}>Vista</button>
+        <button onClick={onCancel} style={btnSecondary}>Hætta við</button>
+      </div>
+    </div>
+  );
+}
+
 // ── Project Card ──────────────────────────────────────────────────────────────
 function ProjectCard({ project, onUpdate, onDelete, onStartWork }) {
   const [expanded, setExpanded] = useState(false);
   const [newLocationName, setNewLocationName] = useState("");
   const [showAddLocation, setShowAddLocation] = useState(false);
-  const [editingName, setEditingName] = useState(false);
-  const [nameDraft, setNameDraft] = useState(project.name);
-
-  const saveName = () => {
-    if (nameDraft.trim()) onUpdate({ ...project, name: nameDraft.trim() });
-    setEditingName(false);
-  };
+  const [editingProject, setEditingProject] = useState(false);
 
   const addLocation = () => {
     if (!newLocationName.trim()) return;
@@ -1235,17 +1293,10 @@ function ProjectCard({ project, onUpdate, onDelete, onStartWork }) {
     <div style={{ background:"#161616", border:project.finished?"1px solid #2a3a2a":"1px solid #2a2a2a", borderRadius:10, marginBottom:12, overflow:"hidden" }}>
       <div onClick={() => setExpanded(!expanded)} style={{ padding:"14px 16px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <div>
-          {editingName ? (
-            <div onClick={(e) => e.stopPropagation()} style={{ display:"flex", gap:6 }}>
-              <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} onKeyDown={(e) => { if(e.key==="Enter") saveName(); if(e.key==="Escape") setEditingName(false); }} style={{ ...inputStyle, fontSize:14, fontWeight:700, padding:"4px 8px" }} autoFocus />
-              <button onClick={saveName} style={{ ...btnPrimary, padding:"4px 10px", fontSize:12 }}>✓</button>
-            </div>
-          ) : (
-            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
               <span style={{ fontWeight:700, color:project.finished?"#4a7a4a":"#e0e0e0", fontSize:15 }}>{project.name}</span>
-              <button onClick={(e) => { e.stopPropagation(); setEditingName(true); setNameDraft(project.name); }} style={{ background:"none", border:"none", color:"#444", cursor:"pointer", fontSize:12, padding:"0 2px" }}>✏️</button>
+              <button onClick={(e) => { e.stopPropagation(); setEditingProject(!editingProject); }} style={{ background:"none", border:"none", color:"#444", cursor:"pointer", fontSize:12, padding:"0 2px" }}>✏️</button>
             </div>
-          )}
           <div style={{ color:"#555", fontSize:12, marginTop:2 }}>
             {project.region}{project.subRegion?" > "+project.subRegion:""}
             {project.assignedTo?" · "+project.assignedTo:""}
@@ -1262,6 +1313,13 @@ function ProjectCard({ project, onUpdate, onDelete, onStartWork }) {
 
       {expanded && (
         <div style={{ padding:"0 16px 16px" }}>
+          {editingProject && (
+            <EditProjectForm
+              project={project}
+              onSave={(updated) => { onUpdate(updated); setEditingProject(false); }}
+              onCancel={() => setEditingProject(false)}
+            />
+          )}
           <NotesSection notes={project.notes} onUpdate={(notes) => onUpdate({ ...project, notes })} />
           <div style={{ borderTop:"1px solid #1a1a1a", marginTop:4, marginBottom:14 }} />
           <ChecklistSection checklist={project.checklist||[]} onUpdate={(checklist) => onUpdate({ ...project, checklist })} />
