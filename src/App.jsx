@@ -118,8 +118,11 @@ const DEFAULT_SUB_REGIONS = {
 };
 const SUB_REGIONS = DEFAULT_SUB_REGIONS;
 const STENCIL_OPTIONS = ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkall","Hjólhýsi","Hjól","Annað"];
-const ZEBRA_SIZES = ["50x300","50x250","50x240","50x200","50x120","Custom"];
-const DEFAULT_WORK_TYPES = ["Línur","Miðlínur","Formerking","Hvítar línur + formerking","Stencil","Blátt ferningur (Fatlaðir)","Grænt ferningur (Rafhlöðsla)","Gangbraut","Þríhyrningar"];
+const ZEBRA_SIZES = ["50x300","50x250","50x240","50x200","50x120","Sérsniðið"];
+const METER_TYPES = ["Hvítar línur","Hvítar línur + formerking","Miðlínur","Kantlínur","Gular línur","Gulur kantur"];
+const PIECE_TYPES = ["Blár ferningur","Blár bakgrunnur","Grænn bakgrunnur","Grænn ferningur"];
+const STENCIL_NAMES = ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkall","Hjólhýsi","Hjól","Annað"];
+const DEFAULT_WORK_TYPES = [...METER_TYPES, ...PIECE_TYPES, "Stencil","Gangbraut","Þríhyrningar"];
 const WORK_TYPES = DEFAULT_WORK_TYPES;
 const DEFAULT_CARS = ["Sprinter","Renault","Iveco","KK","Óúthlutað"];
 const CARS = DEFAULT_CARS;
@@ -481,64 +484,116 @@ function TriangleMode({ onDone, onCancel }) {
 
 // ── Work Item Form ────────────────────────────────────────────────────────────
 function WorkItemForm({ onAdd, onCancel }) {
-  const [type, setType] = useState("Linur");
+  const allTypes = JSON.parse(localStorage.getItem("rml_worktypes")||"null") || WORK_TYPES;
+  const [type, setType] = useState(allTypes[0] || WORK_TYPES[0]);
   const [meters, setMeters] = useState("");
-  const [stencilType, setStencilType] = useState("Fatladur");
-  const [stencilOther, setStencilOther] = useState("");
   const [quantity, setQuantity] = useState("");
+  const [stencilType, setStencilType] = useState(STENCIL_NAMES[0]);
+  const [stencilOther, setStencilOther] = useState("");
   const [zebraSize, setZebraSize] = useState("50x300");
   const [zebraCustom, setZebraCustom] = useState("");
   const [zebraQty, setZebraQty] = useState("");
 
+  const isMeter = METER_TYPES.includes(type);
+  const isPiece = PIECE_TYPES.includes(type);
+  const isStencil = type === "Stencil";
+  const isGangbraut = type === "Gangbraut";
+  const isTriangle = type === "Þríhyrningar";
+
   const handleAdd = () => {
-    let item = { type, id:Date.now() };
-    if (type==="Linur"||type==="Midlinur") {
+    let item = { type, id: Date.now() };
+    if (isMeter) {
       if (!meters) return;
-      item.meters=meters; item.label=type+": "+meters+"m";
-    } else if (type==="Stencil") {
+      item.meters = meters;
+      item.label = type + ": " + meters + "m";
+    } else if (isPiece) {
       if (!quantity) return;
-      const st = stencilType==="Other" ? stencilOther : stencilType;
-      item.stencilType=st; item.quantity=quantity; item.label="Stencil - "+st+" x "+quantity;
-    } else if (type==="Blue Square (Fatladur)"||type==="Green Square (Rafhledsla)") {
+      item.quantity = quantity;
+      item.label = type + " x " + quantity;
+    } else if (isStencil) {
       if (!quantity) return;
-      item.quantity=quantity; item.label=type+" x "+quantity;
-    } else if (type==="Gangbraut") {
+      const st = stencilType === "Annað" ? stencilOther : stencilType;
+      item.stencilType = st;
+      item.quantity = quantity;
+      item.label = "Stencil - " + st + " x " + quantity;
+    } else if (isGangbraut) {
       if (!zebraQty) return;
-      const sz = zebraSize==="Custom" ? zebraCustom : zebraSize;
-      item.size=sz; item.quantity=zebraQty; item.label="Gangbraut "+sz+"cm x "+zebraQty;
-    } else if (type==="Þríhyrningar") {
-      // Handled by TriangleMode — shouldn't reach here
-      return;
+      const sz = zebraSize === "Sérsniðið" ? zebraCustom : zebraSize;
+      item.size = sz;
+      item.quantity = zebraQty;
+      item.label = "Gangbraut " + sz + "cm x " + zebraQty;
     }
     onAdd(item);
   };
 
-  if (type === "Þríhyrningar") {
-    return <TriangleMode onDone={onAdd} onCancel={onCancel} />;
-  }
+  if (isTriangle) return <TriangleMode onDone={onAdd} onCancel={onCancel} />;
 
   return (
     <div style={{ background:"#1a1a1a", border:"1px solid #333", borderRadius:8, padding:16, marginTop:8 }}>
-      <div style={{ marginBottom:10 }}><label style={labelStyle}>Work Type</label><select value={type} onChange={(e) => setType(e.target.value)} style={selectStyle}>{(JSON.parse(localStorage.getItem("rml_worktypes")||"null")||WORK_TYPES).map((t) => <option key={t}>{t}</option>)}</select></div>
-      {(type==="Linur"||type==="Midlinur") && <div style={{ marginBottom:10 }}><label style={labelStyle}>Meters</label><input type="number" value={meters} onChange={(e) => setMeters(e.target.value)} placeholder="e.g. 150" style={inputStyle} /></div>}
-      {type==="Stencil" && (
-        <div>
-          <div style={{ marginBottom:10 }}><label style={labelStyle}>Stencil Type</label><select value={stencilType} onChange={(e) => setStencilType(e.target.value)} style={selectStyle}>{STENCIL_OPTIONS.map((s) => <option key={s}>{s}</option>)}</select></div>
-          {stencilType==="Other" && <div style={{ marginBottom:10 }}><input type="text" value={stencilOther} onChange={(e) => setStencilOther(e.target.value)} placeholder="Describe stencil" style={inputStyle} /></div>}
-          <div style={{ marginBottom:10 }}><label style={labelStyle}>Quantity</label><input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="e.g. 4" style={inputStyle} /></div>
+      <div style={{ marginBottom:10 }}>
+        <label style={labelStyle}>Verktegund</label>
+        <select value={type} onChange={(e) => { setType(e.target.value); setMeters(""); setQuantity(""); }} style={selectStyle}>
+          {allTypes.map((t) => <option key={t}>{t}</option>)}
+        </select>
+      </div>
+
+      {isMeter && (
+        <div style={{ marginBottom:10 }}>
+          <label style={labelStyle}>Metrar</label>
+          <input type="number" value={meters} onChange={(e) => setMeters(e.target.value)} placeholder="t.d. 150" style={inputStyle} />
         </div>
       )}
-      {(type==="Blue Square (Fatladur)"||type==="Green Square (Rafhledsla)") && <div style={{ marginBottom:10 }}><label style={labelStyle}>Quantity</label><input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="e.g. 2" style={inputStyle} /></div>}
-      {type==="Gangbraut" && (
-        <div>
-          <div style={{ marginBottom:10 }}><label style={labelStyle}>Size (cm)</label><select value={zebraSize} onChange={(e) => setZebraSize(e.target.value)} style={selectStyle}>{ZEBRA_SIZES.map((s) => <option key={s}>{s}</option>)}</select></div>
-          {zebraSize==="Custom" && <div style={{ marginBottom:10 }}><input type="text" value={zebraCustom} onChange={(e) => setZebraCustom(e.target.value)} placeholder="e.g. 50x180" style={inputStyle} /></div>}
-          <div style={{ marginBottom:10 }}><label style={labelStyle}>Quantity</label><input type="number" value={zebraQty} onChange={(e) => setZebraQty(e.target.value)} placeholder="e.g. 3" style={inputStyle} /></div>
+
+      {isPiece && (
+        <div style={{ marginBottom:10 }}>
+          <label style={labelStyle}>Fjöldi</label>
+          <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="t.d. 4" style={inputStyle} />
         </div>
       )}
+
+      {isStencil && (
+        <div>
+          <div style={{ marginBottom:10 }}>
+            <label style={labelStyle}>Tegund stencils</label>
+            <select value={stencilType} onChange={(e) => setStencilType(e.target.value)} style={selectStyle}>
+              {STENCIL_NAMES.map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+          {stencilType === "Annað" && (
+            <div style={{ marginBottom:10 }}>
+              <input type="text" value={stencilOther} onChange={(e) => setStencilOther(e.target.value)} placeholder="Lýstu stencil" style={inputStyle} />
+            </div>
+          )}
+          <div style={{ marginBottom:10 }}>
+            <label style={labelStyle}>Fjöldi</label>
+            <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="t.d. 4" style={inputStyle} />
+          </div>
+        </div>
+      )}
+
+      {isGangbraut && (
+        <div>
+          <div style={{ marginBottom:10 }}>
+            <label style={labelStyle}>Stærð (cm)</label>
+            <select value={zebraSize} onChange={(e) => setZebraSize(e.target.value)} style={selectStyle}>
+              {ZEBRA_SIZES.map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+          {zebraSize === "Sérsniðið" && (
+            <div style={{ marginBottom:10 }}>
+              <input type="text" value={zebraCustom} onChange={(e) => setZebraCustom(e.target.value)} placeholder="t.d. 50x180" style={inputStyle} />
+            </div>
+          )}
+          <div style={{ marginBottom:10 }}>
+            <label style={labelStyle}>Fjöldi</label>
+            <input type="number" value={zebraQty} onChange={(e) => setZebraQty(e.target.value)} placeholder="t.d. 3" style={inputStyle} />
+          </div>
+        </div>
+      )}
+
       <div style={{ display:"flex", gap:8 }}>
-        <button onClick={handleAdd} style={btnPrimary}>Add</button>
-        <button onClick={onCancel} style={btnSecondary}>Cancel</button>
+        <button onClick={handleAdd} style={btnPrimary}>Bæta við</button>
+        <button onClick={onCancel} style={btnSecondary}>Hætta við</button>
       </div>
     </div>
   );
