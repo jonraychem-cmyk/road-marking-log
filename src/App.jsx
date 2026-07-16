@@ -106,20 +106,27 @@ async function loadComments(projectId) {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const REGIONS = ["South", "Rest of Iceland"];
-const SUB_REGIONS = {
-  "Rest of Iceland": ["Akureyri", "North", "West"],
-  South: [],
+const DEFAULT_REGIONS = ["Suðurland", "Norðurland", "Vesturland", "Austurland", "Vestfirðir"];
+const REGIONS = DEFAULT_REGIONS;
+const DEFAULT_SUB_REGIONS = {
+  "Suðurland": ["Reykjavík", "Keflavík", "Selfoss", "Hveragerði"],
+  "Norðurland": ["Akureyri", "Dalvík", "Húsavík", "Sauðárkrókur", "Blönduós", "Hvammstangi", "Vopnafjörður"],
+  "Vesturland": ["Borgarnes", "Patreksfjörður"],
+  "Austurland": ["Egilsstaðir"],
+  "Vestfirðir": ["Ísafjörður", "Bolungarvík"],
 };
-const STENCIL_OPTIONS = ["Fatladur","Rafhledsla","Or","BUS","Ruta","Gongukall","Hjolhysi","Hjol","Other"];
+const SUB_REGIONS = DEFAULT_SUB_REGIONS;
+const STENCIL_OPTIONS = ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkall","Hjólhýsi","Hjól","Annað"];
 const ZEBRA_SIZES = ["50x300","50x250","50x240","50x200","50x120","Custom"];
-const WORK_TYPES = ["Linur","Midlinur","Stencil","Blue Square (Fatladur)","Green Square (Rafhledsla)","Gangbraut","Þríhyrningar"];
-const CARS = ["Car 1","Car 2","Unassigned"];
+const DEFAULT_WORK_TYPES = ["Línur","Miðlínur","Formerking","Hvítar línur + formerking","Stencil","Blátt ferningur (Fatlaðir)","Grænt ferningur (Rafhlöðsla)","Gangbraut","Þríhyrningar"];
+const WORK_TYPES = DEFAULT_WORK_TYPES;
+const DEFAULT_CARS = ["Bíll 1","Bíll 2","Óúthlutað"];
+const CARS = DEFAULT_CARS;
 const CHECKLIST_PRESETS = {
-  "Stencils": ["Fatladur","Rafhledsla","Or","BUS","Ruta","Gongukall","Hjolhysi","Hjol"],
+  "Stencils": ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkall","Hjólhýsi","Hjól"],
   "Þríhyrningar": ["Þríhyrningar (shark's teeth)"],
-  "Paint": ["White paint","Yellow paint","Blue paint (Fatladur)","Green paint (Rafhledsla)","Red paint"],
-  "Equipment": ["Line machine","Stencil sprayer","Compressor","Tape","Primer","Cleaning solvent"],
+  "Málning": ["Hvít málning","Gul málning","Blá málning (Fatlaðir)","Græn málning (Rafhlöðsla)","Rauð málning"],
+  "Tæki": ["Línuvél","Stencil-úðari","Þjöppuveður","Límband","Primer","Hreinsiefni"],
 };
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -494,7 +501,7 @@ function WorkItemForm({ onAdd, onCancel }) {
 
   return (
     <div style={{ background:"#1a1a1a", border:"1px solid #333", borderRadius:8, padding:16, marginTop:8 }}>
-      <div style={{ marginBottom:10 }}><label style={labelStyle}>Work Type</label><select value={type} onChange={(e) => setType(e.target.value)} style={selectStyle}>{WORK_TYPES.map((t) => <option key={t}>{t}</option>)}</select></div>
+      <div style={{ marginBottom:10 }}><label style={labelStyle}>Work Type</label><select value={type} onChange={(e) => setType(e.target.value)} style={selectStyle}>{(JSON.parse(localStorage.getItem("rml_worktypes")||"null")||WORK_TYPES).map((t) => <option key={t}>{t}</option>)}</select></div>
       {(type==="Linur"||type==="Midlinur") && <div style={{ marginBottom:10 }}><label style={labelStyle}>Meters</label><input type="number" value={meters} onChange={(e) => setMeters(e.target.value)} placeholder="e.g. 150" style={inputStyle} /></div>}
       {type==="Stencil" && (
         <div>
@@ -985,9 +992,148 @@ function TripsView({ projects, onClose }) {
   );
 }
 
+// ── Settings Panel ────────────────────────────────────────────────────────────
+function SettingsPanel({ onClose }) {
+  const [tab, setTab] = useState("towns");
+
+  const [regions, setRegions] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("rml_regions")) || DEFAULT_REGIONS; } catch { return DEFAULT_REGIONS; }
+  });
+  const [subRegions, setSubRegions] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("rml_subregions")) || DEFAULT_SUB_REGIONS; } catch { return DEFAULT_SUB_REGIONS; }
+  });
+  const [workTypes, setWorkTypes] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("rml_worktypes")) || DEFAULT_WORK_TYPES; } catch { return DEFAULT_WORK_TYPES; }
+  });
+  const [cars, setCars] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("rml_cars")) || DEFAULT_CARS; } catch { return DEFAULT_CARS; }
+  });
+
+  const [newItem, setNewItem] = useState("");
+  const [selectedRegion, setSelectedRegion] = useState(regions[0] || "");
+
+  const saveRegions = (r) => { setRegions(r); localStorage.setItem("rml_regions", JSON.stringify(r)); };
+  const saveSubRegions = (sr) => { setSubRegions(sr); localStorage.setItem("rml_subregions", JSON.stringify(sr)); };
+  const saveWorkTypes = (wt) => { setWorkTypes(wt); localStorage.setItem("rml_worktypes", JSON.stringify(wt)); };
+  const saveCars = (c) => { setCars(c); localStorage.setItem("rml_cars", JSON.stringify(c)); };
+
+  const addTown = () => {
+    if (!newItem.trim() || !selectedRegion) return;
+    const updated = { ...subRegions, [selectedRegion]: [...(subRegions[selectedRegion]||[]), newItem.trim()] };
+    saveSubRegions(updated);
+    setNewItem("");
+  };
+
+  const removeTown = (region, town) => {
+    const updated = { ...subRegions, [region]: subRegions[region].filter((t) => t !== town) };
+    saveSubRegions(updated);
+  };
+
+  const addWorkType = () => {
+    if (!newItem.trim()) return;
+    saveWorkTypes([...workTypes, newItem.trim()]);
+    setNewItem("");
+  };
+
+  const removeWorkType = (wt) => saveWorkTypes(workTypes.filter((w) => w !== wt));
+
+  const addCar = () => {
+    if (!newItem.trim()) return;
+    saveCars([...cars, newItem.trim()]);
+    setNewItem("");
+  };
+
+  const removeCar = (c) => saveCars(cars.filter((x) => x !== c));
+
+  const tabs = [
+    { id:"towns", label:"Bæir" },
+    { id:"worktypes", label:"Verktegundir" },
+    { id:"cars", label:"Bílar" },
+  ];
+
+  return (
+    <div style={{ background:"#161616", border:"1px solid #2a2a2a", borderRadius:10, marginBottom:16, overflow:"hidden" }}>
+      <div style={{ padding:"14px 16px", borderBottom:"1px solid #1a1a1a", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div style={{ fontWeight:700, fontSize:15 }}>⚙️ Stillingar</div>
+        <button onClick={onClose} style={{ background:"none", border:"none", color:"#555", fontSize:18, cursor:"pointer" }}>×</button>
+      </div>
+
+      {/* Tab bar */}
+      <div style={{ display:"flex", gap:6, padding:"10px 16px", borderBottom:"1px solid #1a1a1a" }}>
+        {tabs.map((t) => (
+          <button key={t.id} onClick={() => { setTab(t.id); setNewItem(""); }} style={{ background:tab===t.id?"#e8f0e8":"none", color:tab===t.id?"#111":"#666", border:tab===t.id?"none":"1px solid #222", borderRadius:16, padding:"5px 14px", fontSize:12, cursor:"pointer", fontWeight:tab===t.id?700:400 }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ padding:"14px 16px" }}>
+        {tab === "towns" && (
+          <div>
+            <div style={{ marginBottom:10 }}>
+              <label style={labelStyle}>Svæði</label>
+              <select value={selectedRegion} onChange={(e) => setSelectedRegion(e.target.value)} style={selectStyle}>
+                {regions.map((r) => <option key={r}>{r}</option>)}
+              </select>
+            </div>
+            {selectedRegion && (subRegions[selectedRegion]||[]).map((town) => (
+              <div key={town} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"#111", borderRadius:6, padding:"8px 12px", marginBottom:6, fontSize:13, color:"#ccc" }}>
+                {town}
+                <button onClick={() => removeTown(selectedRegion, town)} style={{ background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:15 }}>×</button>
+              </div>
+            ))}
+            <div style={{ display:"flex", gap:6, marginTop:8 }}>
+              <input type="text" value={newItem} onChange={(e) => setNewItem(e.target.value)} onKeyDown={(e) => e.key==="Enter" && addTown()} placeholder="Nýr bær…" style={{ ...inputStyle, flex:1, fontSize:13 }} />
+              <button onClick={addTown} style={{ ...btnPrimary, padding:"8px 12px" }}>+</button>
+            </div>
+          </div>
+        )}
+
+        {tab === "worktypes" && (
+          <div>
+            {workTypes.map((wt) => (
+              <div key={wt} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"#111", borderRadius:6, padding:"8px 12px", marginBottom:6, fontSize:13, color:"#ccc" }}>
+                {wt}
+                <button onClick={() => removeWorkType(wt)} style={{ background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:15 }}>×</button>
+              </div>
+            ))}
+            <div style={{ display:"flex", gap:6, marginTop:8 }}>
+              <input type="text" value={newItem} onChange={(e) => setNewItem(e.target.value)} onKeyDown={(e) => e.key==="Enter" && addWorkType()} placeholder="Ný verktegund…" style={{ ...inputStyle, flex:1, fontSize:13 }} />
+              <button onClick={addWorkType} style={{ ...btnPrimary, padding:"8px 12px" }}>+</button>
+            </div>
+          </div>
+        )}
+
+        {tab === "cars" && (
+          <div>
+            {cars.map((c) => (
+              <div key={c} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"#111", borderRadius:6, padding:"8px 12px", marginBottom:6, fontSize:13, color:"#ccc" }}>
+                {c}
+                <button onClick={() => removeCar(c)} style={{ background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:15 }}>×</button>
+              </div>
+            ))}
+            <div style={{ display:"flex", gap:6, marginTop:8 }}>
+              <input type="text" value={newItem} onChange={(e) => setNewItem(e.target.value)} onKeyDown={(e) => e.key==="Enter" && addCar()} placeholder="Nýr bíll eða nafn…" style={{ ...inputStyle, flex:1, fontSize:13 }} />
+              <button onClick={addCar} style={{ ...btnPrimary, padding:"8px 12px" }}>+</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Work Mode ─────────────────────────────────────────────────────────────────
 function WorkMode({ project, onUpdate, onExit }) {
+  const [newLocName, setNewLocName] = useState("");
+  const [showAddLoc, setShowAddLoc] = useState(false);
+
   const updateLocation = (loc) => onUpdate({ ...project, locations:project.locations.map((l) => l.id===loc.id ? loc : l) });
+  const addLocation = () => {
+    if (!newLocName.trim()) return;
+    onUpdate({ ...project, locations:[...project.locations, { id:Date.now(), name:newLocName.trim(), workItems:[], address:"" }] });
+    setNewLocName(""); setShowAddLoc(false);
+  };
   const hasDrawings = (project.drawings||[]).length > 0;
 
   return (
@@ -1039,10 +1185,23 @@ function WorkMode({ project, onUpdate, onExit }) {
         {(project.notes || hasDrawings) && <div style={{ borderTop:"1px solid #1a1a1a", marginBottom:14 }} />}
 
         {/* Locations — logging only */}
-        <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>Locations</div>
+        <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>Staðsetningar</div>
+        {project.locations.length === 0 && (
+          <div style={{ color:"#444", fontSize:13, marginBottom:10 }}>Engar staðsetningar ennþá — bættu við hér að neðan</div>
+        )}
         {project.locations.map((loc) => (
           <LocationLog key={loc.id} location={loc} project={project} onUpdate={updateLocation} />
         ))}
+
+        {showAddLoc ? (
+          <div style={{ display:"flex", gap:8, marginTop:8 }}>
+            <input type="text" value={newLocName} onChange={(e) => setNewLocName(e.target.value)} onKeyDown={(e) => e.key==="Enter" && addLocation()} placeholder="Nafn staðsetningar" style={{ ...inputStyle, flex:1 }} autoFocus />
+            <button onClick={addLocation} style={btnPrimary}>Bæta við</button>
+            <button onClick={() => setShowAddLoc(false)} style={btnSecondary}>×</button>
+          </div>
+        ) : (
+          <button onClick={() => setShowAddLoc(true)} style={{ ...btnSecondary, fontSize:12, marginTop:4, width:"100%" }}>+ Bæta við staðsetningu</button>
+        )}
       </div>
     </div>
   );
@@ -1053,6 +1212,13 @@ function ProjectCard({ project, onUpdate, onDelete, onStartWork }) {
   const [expanded, setExpanded] = useState(false);
   const [newLocationName, setNewLocationName] = useState("");
   const [showAddLocation, setShowAddLocation] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(project.name);
+
+  const saveName = () => {
+    if (nameDraft.trim()) onUpdate({ ...project, name: nameDraft.trim() });
+    setEditingName(false);
+  };
 
   const addLocation = () => {
     if (!newLocationName.trim()) return;
@@ -1069,7 +1235,17 @@ function ProjectCard({ project, onUpdate, onDelete, onStartWork }) {
     <div style={{ background:"#161616", border:project.finished?"1px solid #2a3a2a":"1px solid #2a2a2a", borderRadius:10, marginBottom:12, overflow:"hidden" }}>
       <div onClick={() => setExpanded(!expanded)} style={{ padding:"14px 16px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <div>
-          <div style={{ fontWeight:700, color:project.finished?"#4a7a4a":"#e0e0e0", fontSize:15 }}>{project.name}</div>
+          {editingName ? (
+            <div onClick={(e) => e.stopPropagation()} style={{ display:"flex", gap:6 }}>
+              <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} onKeyDown={(e) => { if(e.key==="Enter") saveName(); if(e.key==="Escape") setEditingName(false); }} style={{ ...inputStyle, fontSize:14, fontWeight:700, padding:"4px 8px" }} autoFocus />
+              <button onClick={saveName} style={{ ...btnPrimary, padding:"4px 10px", fontSize:12 }}>✓</button>
+            </div>
+          ) : (
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ fontWeight:700, color:project.finished?"#4a7a4a":"#e0e0e0", fontSize:15 }}>{project.name}</span>
+              <button onClick={(e) => { e.stopPropagation(); setEditingName(true); setNameDraft(project.name); }} style={{ background:"none", border:"none", color:"#444", cursor:"pointer", fontSize:12, padding:"0 2px" }}>✏️</button>
+            </div>
+          )}
           <div style={{ color:"#555", fontSize:12, marginTop:2 }}>
             {project.region}{project.subRegion?" > "+project.subRegion:""}
             {project.assignedTo?" · "+project.assignedTo:""}
@@ -1143,7 +1319,7 @@ function NewProjectForm({ onAdd, onCancel }) {
     <div style={{ background:"#161616", border:"1px solid #333", borderRadius:10, padding:16, marginBottom:16 }}>
       <div style={{ fontWeight:700, color:"#e0e0e0", marginBottom:14 }}>New Project</div>
       <div style={{ marginBottom:10 }}><label style={labelStyle}>Project Name</label><input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Keflavik Airport" style={inputStyle} /></div>
-      <div style={{ marginBottom:10 }}><label style={labelStyle}>Region</label><select value={region} onChange={(e) => { setRegion(e.target.value); setSubRegion(""); }} style={selectStyle}>{REGIONS.map((r) => <option key={r}>{r}</option>)}</select></div>
+      <div style={{ marginBottom:10 }}><label style={labelStyle}>Region</label><select value={region} onChange={(e) => { setRegion(e.target.value); setSubRegion(""); }} style={selectStyle}>{(JSON.parse(localStorage.getItem("rml_regions")||"null")||REGIONS).map((r) => <option key={r}>{r}</option>)}</select></div>
       {SUB_REGIONS[region]&&SUB_REGIONS[region].length>0 && <div style={{ marginBottom:10 }}><label style={labelStyle}>Sub-region</label><select value={subRegion} onChange={(e) => setSubRegion(e.target.value)} style={selectStyle}><option value="">None</option>{SUB_REGIONS[region].map((s) => <option key={s}>{s}</option>)}</select></div>}
       {region==="South" && <div style={{ marginBottom:10 }}><label style={labelStyle}>Assign to</label><select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} style={selectStyle}>{CARS.map((c) => <option key={c}>{c}</option>)}</select></div>}
       <div style={{ marginBottom:14 }}><label style={labelStyle}>Notes</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Special instructions…" style={{ ...inputStyle, height:70, resize:"vertical" }} /></div>
@@ -1165,6 +1341,7 @@ export default function App() {
   const [showHours, setShowHours] = useState(false);
   const [showTrips, setShowTrips] = useState(false);
   const [showPrivate, setShowPrivate] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Load projects from sheet on startup
   useEffect(() => {
@@ -1246,11 +1423,13 @@ export default function App() {
           <div style={{ display:"flex", gap:6 }}>
             <button onClick={() => { setShowTrips(!showTrips); setShowHours(false); setShowPrivate(false); }} style={{ background:showTrips?"#1a2a1a":"none", color:showTrips?"#4a9a4a":"#555", border:`1px solid ${showTrips?"#2a4a2a":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>🗺</button>
             <button onClick={() => { setShowHours(!showHours); setShowTrips(false); setShowPrivate(false); }} style={{ background:showHours?"#1a2a3a":"none", color:showHours?"#6aacf0":"#555", border:`1px solid ${showHours?"#2a4a6a":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>⏱</button>
-            <button onClick={() => { setShowPrivate(!showPrivate); setShowHours(false); setShowTrips(false); }} style={{ background:showPrivate?"#2a1a2a":"none", color:showPrivate?"#a06ac0":"#555", border:`1px solid ${showPrivate?"#4a2a5a":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>🎒</button>
+            <button onClick={() => { setShowPrivate(!showPrivate); setShowHours(false); setShowTrips(false); setShowSettings(false); }} style={{ background:showPrivate?"#2a1a2a":"none", color:showPrivate?"#a06ac0":"#555", border:`1px solid ${showPrivate?"#4a2a5a":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>🎒</button>
+            <button onClick={() => { setShowSettings(!showSettings); setShowPrivate(false); setShowHours(false); setShowTrips(false); }} style={{ background:showSettings?"#2a2a1a":"none", color:showSettings?"#c0a040":"#555", border:`1px solid ${showSettings?"#5a4a10":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>⚙️</button>
           </div>
         </div>
       </div>
       <div style={{ padding:"16px 16px 0" }}>
+        {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
         {showPrivate && <PrivateChecklist onClose={() => setShowPrivate(false)} />}
         {showHours && <HoursTracker onClose={() => setShowHours(false)} />}
         {showTrips && <TripsView projects={projects} onClose={() => setShowTrips(false)} />}
