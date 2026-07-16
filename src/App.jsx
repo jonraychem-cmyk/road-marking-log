@@ -1,3 +1,4 @@
+// v2.1 — vehicle icons, edit project, split toolbar
 import { useState, useCallback, useEffect } from "react";
 
 // ── PIN Lock ──────────────────────────────────────────────────────────────────
@@ -1469,21 +1470,26 @@ export default function App() {
             <button key={f} onClick={() => setFilter(f)} style={{ background:filter===f?"#e8f0e8":"none", color:filter===f?"#111":"#666", border:filter===f?"none":"1px solid #222", borderRadius:16, padding:"5px 14px", fontSize:12, cursor:"pointer", fontWeight:filter===f?700:400, textTransform:"capitalize" }}>{f}</button>
           ))}
         </div>
-        <div style={{ display:"flex", gap:6, alignItems:"center", justifyContent:"space-between" }}>
-          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-            <span style={{ color:"#444", fontSize:11, marginRight:2 }}>View:</span>
-            {["all","Car 1","Car 2"].map((c) => (
-              <button key={c} onClick={() => setCarFilter(c)} style={{ background:carFilter===c?"#1a2a3a":"none", color:carFilter===c?"#6aacf0":"#555", border:carFilter===c?"1px solid #2a4a6a":"1px solid #222", borderRadius:16, padding:"4px 12px", fontSize:12, cursor:"pointer", fontWeight:carFilter===c?700:400 }}>
-                {c==="all" ? "All cars" : c}
-              </button>
-            ))}
+        {/* Row 1 — Vehicle filter */}
+        <div style={{ display:"flex", gap:6, marginBottom:8, overflowX:"auto", paddingBottom:2 }}>
+          <div onClick={() => setCarFilter("all")} style={{ cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+            background:carFilter==="all"?"#1a2a3a":"none", border:`1px solid ${carFilter==="all"?"#2a4a6a":"#222"}`,
+            borderRadius:10, padding:"6px 10px", minWidth:52, flexShrink:0 }}>
+            <span style={{ fontSize:18 }}>🚗</span>
+            <span style={{ fontSize:10, color:carFilter==="all"?"#6aacf0":"#555", fontWeight:carFilter==="all"?700:400 }}>Allir</span>
           </div>
-          <div style={{ display:"flex", gap:6 }}>
-            <button onClick={() => { setShowTrips(!showTrips); setShowHours(false); setShowPrivate(false); }} style={{ background:showTrips?"#1a2a1a":"none", color:showTrips?"#4a9a4a":"#555", border:`1px solid ${showTrips?"#2a4a2a":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>🗺</button>
-            <button onClick={() => { setShowHours(!showHours); setShowTrips(false); setShowPrivate(false); }} style={{ background:showHours?"#1a2a3a":"none", color:showHours?"#6aacf0":"#555", border:`1px solid ${showHours?"#2a4a6a":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>⏱</button>
-            <button onClick={() => { setShowPrivate(!showPrivate); setShowHours(false); setShowTrips(false); setShowSettings(false); }} style={{ background:showPrivate?"#2a1a2a":"none", color:showPrivate?"#a06ac0":"#555", border:`1px solid ${showPrivate?"#4a2a5a":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>🎒</button>
-            <button onClick={() => { setShowSettings(!showSettings); setShowPrivate(false); setShowHours(false); setShowTrips(false); }} style={{ background:showSettings?"#2a2a1a":"none", color:showSettings?"#c0a040":"#555", border:`1px solid ${showSettings?"#5a4a10":"#222"}`, borderRadius:16, padding:"4px 10px", fontSize:12, cursor:"pointer" }}>⚙️</button>
-          </div>
+          {(JSON.parse(localStorage.getItem("rml_cars")||"null")||DEFAULT_CARS).filter(c=>c!=="Óúthlutað").map((c) => (
+            <div key={c} onClick={() => setCarFilter(c)} style={{ flexShrink:0 }}>
+              <VehicleBadge name={c} active={carFilter===c} />
+            </div>
+          ))}
+        </div>
+        {/* Row 2 — Tools */}
+        <div style={{ display:"flex", gap:6, justifyContent:"flex-end" }}>
+          <button onClick={() => { setShowTrips(!showTrips); setShowHours(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showTrips?"#1a2a1a":"none", color:showTrips?"#4a9a4a":"#555", border:`1px solid ${showTrips?"#2a4a2a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>🗺 Ferðir</button>
+          <button onClick={() => { setShowHours(!showHours); setShowTrips(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showHours?"#1a2a3a":"none", color:showHours?"#6aacf0":"#555", border:`1px solid ${showHours?"#2a4a6a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⏱ Vinnustundir</button>
+          <button onClick={() => { setShowPrivate(!showPrivate); setShowHours(false); setShowTrips(false); setShowSettings(false); }} style={{ background:showPrivate?"#2a1a2a":"none", color:showPrivate?"#a06ac0":"#555", border:`1px solid ${showPrivate?"#4a2a5a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>🎒</button>
+          <button onClick={() => { setShowSettings(!showSettings); setShowPrivate(false); setShowHours(false); setShowTrips(false); }} style={{ background:showSettings?"#2a2a1a":"none", color:showSettings?"#c0a040":"#555", border:`1px solid ${showSettings?"#5a4a10":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⚙️</button>
         </div>
       </div>
       <div style={{ padding:"16px 16px 0" }}>
