@@ -119,11 +119,18 @@ const DEFAULT_SUB_REGIONS = {
 const SUB_REGIONS = DEFAULT_SUB_REGIONS;
 const STENCIL_OPTIONS = ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkall","Hjólhýsi","Hjól","Annað"];
 const ZEBRA_SIZES = ["50x300","50x250","50x240","50x200","50x120","Sérsniðið"];
-const METER_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Miðlínur","Kantlínur","Gular línur","Gulur kantur","Formerking"];
+const METER_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Miðlínur","Kantlínur","Gular línur","Gulur kantur","Formerking","Línur","Hvítar línur","Hvítar línur + formerking","Gul lína","Gular línur"];
 const PIECE_TYPES = ["Blár ferningur","Blár bakgrunnur","Grænn bakgrunnur","Grænn ferningur"];
 const STENCIL_NAMES = ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkall","Hjólhýsi","Hjól","Annað"];
-const DEFAULT_WORK_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Miðlínur","Kantlínur","Gular línur","Gulur kantur",...PIECE_TYPES,"Stencil","Gangbraut","Þríhyrningar","Formerking"];
+const DEFAULT_WORK_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Gular línur","Gulur kantur","Miðlínur","Kantlínur",...PIECE_TYPES,"Stencil","Gangbraut","Þríhyrningar","Formerking"];
 const WORK_TYPES = DEFAULT_WORK_TYPES;
+// Clear stale work type cache so new names take effect
+try {
+  const saved = JSON.parse(localStorage.getItem("rml_worktypes")||"null");
+  if (saved && saved.includes("Línur") && !saved.includes("Bílastæðalínur")) {
+    localStorage.removeItem("rml_worktypes");
+  }
+} catch(e) {}
 const DEFAULT_CARS = ["Sprinter","Renault","Iveco","KK","Óúthlutað"];
 const CARS = DEFAULT_CARS;
 const VEHICLE_ICONS = {
