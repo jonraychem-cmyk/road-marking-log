@@ -119,10 +119,10 @@ const DEFAULT_SUB_REGIONS = {
 const SUB_REGIONS = DEFAULT_SUB_REGIONS;
 const STENCIL_OPTIONS = ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkall","Hjólhýsi","Hjól","Annað"];
 const ZEBRA_SIZES = ["50x300","50x250","50x240","50x200","50x120","Sérsniðið"];
-const METER_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Miðlínur","Kantlínur","Gular línur","Gulur kantur","Formerking","Línur","Hvítar línur","Hvítar línur + formerking","Gul lína","Gular línur"];
+const METER_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Miðlínur","Kantlínur","Gular línur","Gulur kantur","Skott","Formerking","Línur","Hvítar línur","Hvítar línur + formerking","Gul lína","Gular línur"];
 const PIECE_TYPES = ["Blár ferningur","Blár bakgrunnur","Grænn bakgrunnur","Grænn ferningur"];
 const STENCIL_NAMES = ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkall","Hjólhýsi","Hjól","Annað"];
-const DEFAULT_WORK_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Gular línur","Gulur kantur","Miðlínur","Kantlínur",...PIECE_TYPES,"Stencil","Gangbraut","Þríhyrningar","Formerking"];
+const DEFAULT_WORK_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Gular línur","Gulur kantur","Miðlínur","Kantlínur","Skott",...PIECE_TYPES,"Stencil","Gangbraut","Þríhyrningar","Formerking"];
 const WORK_TYPES = DEFAULT_WORK_TYPES;
 // Clear stale work type cache so new names take effect
 try {
@@ -1229,7 +1229,7 @@ function WorkMode({ project, onUpdate, onExit }) {
             <div style={{ color:"#444", fontSize:11 }}>Work mode · {project.assignedTo||"Unassigned"}</div>
           </div>
           {!project.finished && (
-            <button onClick={() => onUpdate({ ...project, finished:true })} style={{ ...{background:"#1a3a1a", color:"#4a9a4a", border:"1px solid #2a5a2a", borderRadius:6, padding:"6px 12px", fontSize:12, cursor:"pointer"}, marginLeft:"auto", flexShrink:0 }}>
+            <button onClick={() => { onUpdate({ ...project, finished:true }); }} style={{ ...{background:"#1a3a1a", color:"#4a9a4a", border:"1px solid #2a5a2a", borderRadius:6, padding:"6px 12px", fontSize:12, cursor:"pointer"}, marginLeft:"auto", flexShrink:0 }}>
               ✓ Finish
             </button>
           )}
@@ -1496,7 +1496,7 @@ export default function App() {
   const [filter, setFilter] = useState("active");
   const [search, setSearch] = useState("");
   const [carFilter, setCarFilter] = useState("all");
-  const [workMode, setWorkMode] = useState(null);
+  const [workMode, setWorkMode] = useState(() => localStorage.getItem('rml_workmode') || null);
   const [showHours, setShowHours] = useState(false);
   const [showTrips, setShowTrips] = useState(false);
   const [showPrivate, setShowPrivate] = useState(false);
@@ -1537,7 +1537,7 @@ export default function App() {
     return matchesFilter && matchesSearch && matchesCar;
   });
 
-  const workProject = workMode ? projects.find((p) => p.id===workMode) : null;
+  const workProject = workMode ? projects.find((p) => String(p.id)===String(workMode)) : null;
 
   if (!authed) {
     return <PinScreen onUnlock={() => setAuthed(true)} />;
@@ -1556,7 +1556,7 @@ export default function App() {
       <WorkMode
         project={workProject}
         onUpdate={updateProject}
-        onExit={() => setWorkMode(null)}
+        onExit={() => { localStorage.removeItem('rml_workmode'); setWorkMode(null); }}
       />
     );
   }
@@ -1612,7 +1612,7 @@ export default function App() {
         {filtered.length===0 && <div style={{ textAlign:"center", color:"#444", padding:"40px 20px", fontSize:14 }}>{search?"No projects match your search":"No projects here yet"}</div>}
         {filtered.map((p, i) => (
           <ProjectCard key={p.id} project={p} onUpdate={updateProject} onDelete={deleteProject}
-            onStartWork={() => setWorkMode(p.id)}
+            onStartWork={() => { const id = String(p.id); localStorage.setItem('rml_workmode', id); setWorkMode(id); }}
             onMoveUp={() => moveProject(p.id, -1)}
             onMoveDown={() => moveProject(p.id, 1)}
             isFirst={i===0} isLast={i===filtered.length-1}
