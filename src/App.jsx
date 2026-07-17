@@ -1414,6 +1414,14 @@ function ProjectCard({ project, onUpdate, onDelete, onStartWork, onMoveUp, onMov
               onCancel={() => setEditingProject(false)}
             />
           )}
+
+          {/* Start work — top of card */}
+          {!project.finished && (
+            <button onClick={onStartWork} style={{ background:"#1a2a3a", color:"#6aacf0", border:"1px solid #2a4a6a", borderRadius:8, padding:"12px 16px", fontSize:14, cursor:"pointer", fontWeight:700, width:"100%", marginBottom:14 }}>
+              ▶ Byrja vinnu
+            </button>
+          )}
+
           <NotesSection notes={project.notes} onUpdate={(notes) => onUpdate({ ...project, notes })} />
           <div style={{ borderTop:"1px solid #1a1a1a", marginTop:4, marginBottom:14 }} />
           <ChecklistSection checklist={project.checklist||[]} onUpdate={(checklist) => onUpdate({ ...project, checklist })} />
@@ -1443,14 +1451,13 @@ function ProjectCard({ project, onUpdate, onDelete, onStartWork, onMoveUp, onMov
             <button onClick={() => setShowAddLocation(true)} style={{ ...btnSecondary, fontSize:12, marginTop:4 }}>+ Add location</button>
           )}
 
-          <div style={{ display:"flex", gap:8, marginTop:14, paddingTop:14, borderTop:"1px solid #222", flexWrap:"wrap" }}>
-            <button onClick={onStartWork} style={{ background:"#1a2a3a", color:"#6aacf0", border:"1px solid #2a4a6a", borderRadius:6, padding:"8px 16px", fontSize:13, cursor:"pointer", fontWeight:700 }}>
-              ▶ Start work
-            </button>
+          <div style={{ display:"flex", gap:8, marginTop:14, paddingTop:14, borderTop:"1px solid #222" }}>
             <button onClick={() => onUpdate({ ...project, finished:!project.finished })} style={project.finished?btnSecondary:btnSuccess}>
-              {project.finished?"Reopen":"Mark finished"}
+              {project.finished?"Enduropna":"Merkja lokið"}
             </button>
-            <button onClick={() => onDelete(project.id)} style={{ ...btnSecondary, color:"#7a3a3a" }}>Delete</button>
+            <button onClick={() => {
+              if (window.confirm("Ertu viss um að þú viljir eyða þessu verkefni?")) onDelete(project.id);
+            }} style={{ ...btnSecondary, color:"#7a3a3a" }}>Eyða</button>
           </div>
         </div>
       )}
