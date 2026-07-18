@@ -418,18 +418,21 @@ function TriangleMode({ onDone, onCancel }) {
 
   return (
     <div style={{ background:"#1a1a1a", border:"1px solid #333", borderRadius:8, padding:16, marginTop:8 }}>
-      {wasRestored && (
-        <div style={{ background:"#1a2a1a", border:"1px solid #2a4a2a", borderRadius:6, padding:"6px 10px", marginBottom:10, color:"#4a9a4a", fontSize:12 }}>
-          ↩ Session restored after refresh
-        </div>
-      )}
-      {/* Header */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:14 }}>
+      {/* Header with cancel */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
         <div style={{ fontWeight:700, color:"#e0e0e0", fontSize:14 }}>Þríhyrningar</div>
-        <div style={{ color:"#555", fontSize:12 }}>
-          {stops.length > 0 && `${stops.length} stop${stops.length!==1?"s":""} · ${total} total`}
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <span style={{ color:"#555", fontSize:12 }}>
+            {stops.length > 0 && `${stops.length} stopp · ${total} samtals`}
+          </span>
+          <button onClick={() => { localStorage.removeItem(TRI_KEY); onCancel(); }} style={{ background:"none", border:"1px solid #444", borderRadius:6, color:"#888", fontSize:12, padding:"3px 10px", cursor:"pointer" }}>Hætta við</button>
         </div>
       </div>
+      {wasRestored && (
+        <div style={{ background:"#1a2a1a", border:"1px solid #2a4a2a", borderRadius:6, padding:"6px 10px", marginBottom:10, color:"#4a9a4a", fontSize:12 }}>
+          ↩ Lota endurheimt eftir endurnýjun
+        </div>
+      )}
 
       {/* Stop log */}
       {stops.length > 0 && (
