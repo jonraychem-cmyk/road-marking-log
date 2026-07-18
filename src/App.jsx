@@ -449,49 +449,35 @@ function TriangleMode({ onDone, onCancel }) {
         </div>
       )}
 
-      {/* Counter */}
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:20, marginBottom:16 }}>
-        <button
-          onClick={() => adjust(-1)}
-          style={{ width:56, height:56, borderRadius:"50%", background:count>0?"#2a2a2a":"#111", border:"2px solid #333", color:"#e0e0e0", fontSize:28, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:300 }}
-        >−</button>
-        <div style={{ textAlign:"center" }}>
-          <div style={{ fontSize:52, fontWeight:800, color:"#e0e0e0", lineHeight:1 }}>{count}</div>
-          <div style={{ color:"#555", fontSize:11, marginTop:4 }}>this stop</div>
+      {/* Counter + quick buttons in one compact row */}
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+        <button onClick={() => adjust(-1)}
+          style={{ width:48, height:48, borderRadius:"50%", background:count>0?"#2a2a2a":"#111", border:"2px solid #333", color:"#e0e0e0", fontSize:24, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>−</button>
+        <div style={{ textAlign:"center", minWidth:48 }}>
+          <div style={{ fontSize:44, fontWeight:800, color:"#e0e0e0", lineHeight:1 }}>{count}</div>
         </div>
-        <button
-          onClick={() => adjust(1)}
-          style={{ width:56, height:56, borderRadius:"50%", background:count<10?"#2a3a2a":"#111", border:"2px solid #333", color:count<10?"#4a9a4a":"#444", fontSize:28, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:300 }}
-        >+</button>
-      </div>
-
-      {/* Quick tap buttons 1-10 */}
-      <div style={{ display:"flex", flexWrap:"wrap", gap:6, justifyContent:"center", marginBottom:14 }}>
-        {[1,2,3,4,5,6,7,8,9,10].map((n) => (
-          <button key={n} onClick={() => setCountVal(n)} style={{ width:38, height:38, borderRadius:8, background:count===n?"#e8f0e8":"#111", color:count===n?"#111":"#666", border:`1px solid ${count===n?"#e8f0e8":"#2a2a2a"}`, fontSize:14, fontWeight:count===n?700:400, cursor:"pointer" }}>
-            {n}
-          </button>
-        ))}
+        <button onClick={() => adjust(1)}
+          style={{ width:48, height:48, borderRadius:"50%", background:count<10?"#2a3a2a":"#111", border:"2px solid #333", color:count<10?"#4a9a4a":"#444", fontSize:24, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>+</button>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:4, flex:1, justifyContent:"center" }}>
+          {[1,2,3,4,5,6,7,8,9,10].map((n) => (
+            <button key={n} onClick={() => setCountVal(n)} style={{ width:32, height:32, borderRadius:6, background:count===n?"#e8f0e8":"#111", color:count===n?"#111":"#666", border:`1px solid ${count===n?"#e8f0e8":"#2a2a2a"}`, fontSize:13, fontWeight:count===n?700:400, cursor:"pointer" }}>
+              {n}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Actions */}
       <div style={{ display:"flex", gap:8 }}>
-        <button
-          onClick={logStop}
-          disabled={count===0}
-          style={{ flex:1, background:count>0?"#1a2a3a":"#111", color:count>0?"#6aacf0":"#444", border:`1px solid ${count>0?"#2a4a6a":"#222"}`, borderRadius:6, padding:"10px", fontSize:13, fontWeight:700, cursor:count>0?"pointer":"default" }}
-        >
-          Log stop →
+        <button onClick={logStop} disabled={count===0}
+          style={{ flex:1, background:count>0?"#1a2a3a":"#111", color:count>0?"#6aacf0":"#444", border:`1px solid ${count>0?"#2a4a6a":"#222"}`, borderRadius:6, padding:"10px", fontSize:13, fontWeight:700, cursor:count>0?"pointer":"default" }}>
+          Skrá stopp →
         </button>
-        <button
-          onClick={finish}
-          disabled={stops.length===0 && count===0}
-          style={{ flex:1, background:stops.length>0||count>0?"#e8f0e8":"#111", color:stops.length>0||count>0?"#111":"#444", border:"none", borderRadius:6, padding:"10px", fontSize:13, fontWeight:700, cursor:stops.length>0||count>0?"pointer":"default" }}
-        >
-          Done · {total + count} total
+        <button onClick={finish} disabled={stops.length===0 && count===0}
+          style={{ flex:1, background:stops.length>0||count>0?"#e8f0e8":"#111", color:stops.length>0||count>0?"#111":"#444", border:"none", borderRadius:6, padding:"10px", fontSize:13, fontWeight:700, cursor:stops.length>0||count>0?"pointer":"default" }}>
+          Lokið · {total + count} samtals
         </button>
       </div>
-      <button onClick={onCancel} style={{ ...{background:"none", color:"#555", border:"none", fontSize:12, cursor:"pointer", marginTop:10, width:"100%", textAlign:"center"} }}>Cancel</button>
     </div>
   );
 }
