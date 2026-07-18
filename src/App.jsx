@@ -379,9 +379,13 @@ function TriangleMode({ onDone, onCancel }) {
 
   const total = stops.reduce((s, x) => s + x.count, 0);
 
-  // Block pull-to-refresh on mobile while counter is open
+  // Block pull-to-refresh only when at top of page
   useEffect(() => {
-    const prevent = (e) => { if (e.touches && e.touches[0].clientY > 0) e.preventDefault(); };
+    const prevent = (e) => {
+      if (window.scrollY === 0 && e.touches[0].clientY > 0) {
+        e.preventDefault();
+      }
+    };
     document.addEventListener("touchmove", prevent, { passive: false });
     return () => document.removeEventListener("touchmove", prevent);
   }, []);
