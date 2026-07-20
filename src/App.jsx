@@ -438,12 +438,20 @@ function TriangleMode({ onDone, onCancel, label="Þríhyrningar" }) {
 
       {/* Stop log */}
       {stops.length > 0 && (
-        <div style={{ marginBottom:12, display:"flex", flexWrap:"wrap", gap:6, maxHeight:60, overflowY:"auto" }}>
-          {stops.map((s) => (
-            <span key={s.stop} style={{ background:"#111", border:"1px solid #2a2a2a", borderRadius:6, color:"#888", fontSize:12, padding:"3px 8px" }}>
-              {s.time && <span style={{ color:"#4a6a4a" }}>{s.time} · </span>}Stop {s.stop}: {s.count}
-            </span>
-          ))}
+        <div style={{ marginBottom:12 }}>
+          <div style={{ color:"#555", fontSize:12, marginBottom:6 }}>
+            {stops.length} stopp skráð · {total} samtals
+          </div>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+            {stops.slice(-3).map((s) => (
+              <span key={s.stop} style={{ background:"#111", border:"1px solid #2a2a2a", borderRadius:6, color:"#888", fontSize:12, padding:"3px 8px" }}>
+                {s.time && <span style={{ color:"#4a6a4a" }}>{s.time} · </span>}Stopp {s.stop}: {s.count}
+              </span>
+            ))}
+            {stops.length > 3 && (
+              <span style={{ color:"#444", fontSize:12, padding:"3px 4px" }}>← {stops.length - 3} fleiri</span>
+            )}
+          </div>
         </div>
       )}
 
