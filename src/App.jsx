@@ -652,7 +652,7 @@ function openMaps(address) {
   window.open(url, "_blank");
 }
 
-function LocationLog({ location, project, onUpdate }) {
+function LocationLog({ location, project, onUpdate, onDelete }) {
   const [showForm, setShowForm] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
   const [editingAddress, setEditingAddress] = useState(false);
@@ -699,15 +699,20 @@ function LocationLog({ location, project, onUpdate }) {
           <span style={{ fontWeight:600, color:"#e0e0e0", fontSize:15 }}>{location.name}</span>
           <SyncBadge status={syncStatus} />
         </div>
-        {location.address ? (
-          <button onClick={() => openMaps(location.address)} style={{ background:"#1a2a1a", border:"1px solid #2a4a2a", borderRadius:6, color:"#4a9a4a", fontSize:12, padding:"4px 10px", cursor:"pointer", flexShrink:0 }}>
-            📍 Navigate
-          </button>
-        ) : (
-          <button onClick={() => setEditingAddress(true)} style={{ background:"none", border:"1px solid #2a2a2a", borderRadius:6, color:"#555", fontSize:11, padding:"3px 8px", cursor:"pointer", flexShrink:0 }}>
-            + Address
-          </button>
-        )}
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          {location.address ? (
+            <button onClick={() => openMaps(location.address)} style={{ background:"#1a2a1a", border:"1px solid #2a4a2a", borderRadius:6, color:"#4a9a4a", fontSize:12, padding:"4px 10px", cursor:"pointer", flexShrink:0 }}>
+              📍 Navigate
+            </button>
+          ) : (
+            <button onClick={() => setEditingAddress(true)} style={{ background:"none", border:"1px solid #2a2a2a", borderRadius:6, color:"#555", fontSize:11, padding:"3px 8px", cursor:"pointer", flexShrink:0 }}>
+              + Address
+            </button>
+          )}
+          {onDelete && (
+            <button onClick={() => { if(window.confirm(`Eyða "${location.name}"?`)) onDelete(location.id); }} style={{ background:"none", border:"none", color:"#5a2a2a", cursor:"pointer", fontSize:16, padding:"0 4px" }}>🗑</button>
+          )}
+        </div>
       </div>
       {editingAddress && (
         <div style={{ marginBottom:10 }}>
@@ -1281,7 +1286,8 @@ function WorkMode({ project, onUpdate, onExit }) {
           <div style={{ color:"#444", fontSize:13, marginBottom:10 }}>Engar staðsetningar ennþá — bættu við hér að neðan</div>
         )}
         {project.locations.map((loc) => (
-          <LocationLog key={loc.id} location={loc} project={project} onUpdate={updateLocation} />
+          <LocationLog key={loc.id} location={loc} project={project} onUpdate={updateLocation}
+            onDelete={(id) => onUpdate({ ...project, locations:project.locations.filter((l) => l.id!==id) })} />
         ))}
 
         {showAddLoc ? (
