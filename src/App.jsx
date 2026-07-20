@@ -414,6 +414,7 @@ function TriangleMode({ onDone, onCancel, label="Þríhyrningar" }) {
       quantity: finalTotal,
       stops: finalStops,
       label: `${label}: ${finalTotal} samtals (${stopSummary})`,
+      timestamp: new Date().toISOString(),
     };
     localStorage.removeItem(storageKey);
     onDone(item);
