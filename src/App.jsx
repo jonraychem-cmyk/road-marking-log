@@ -1523,7 +1523,7 @@ export default function App() {
 
   // Save projects to sheet whenever they change
   useEffect(() => {
-    if (!loading) saveProjectsToSheet(projects).catch(console.error);
+    if (!loading && projects.length > 0) saveProjectsToSheet(projects).catch(console.error);
   }, [projects, loading]);
 
   const addProject = (p) => { setProjects((prev) => [p,...prev]); setShowNew(false); };
