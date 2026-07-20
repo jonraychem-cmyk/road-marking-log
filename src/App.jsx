@@ -1277,7 +1277,7 @@ function WorkMode({ project, onUpdate, onExit }) {
         {(project.notes || hasDrawings) && <div style={{ borderTop:"1px solid #1a1a1a", marginBottom:14 }} />}
 
         {/* Locations — logging only */}
-        <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>Staðsetningar</div>
+        <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>Verkefni</div>
         {project.locations.length === 0 && (
           <div style={{ color:"#444", fontSize:13, marginBottom:10 }}>Engar staðsetningar ennþá — bættu við hér að neðan</div>
         )}
@@ -1287,12 +1287,12 @@ function WorkMode({ project, onUpdate, onExit }) {
 
         {showAddLoc ? (
           <div style={{ display:"flex", gap:8, marginTop:8 }}>
-            <input type="text" value={newLocName} onChange={(e) => setNewLocName(e.target.value)} onKeyDown={(e) => e.key==="Enter" && addLocation()} placeholder="Nafn staðsetningar" style={{ ...inputStyle, flex:1 }} autoFocus />
+            <input type="text" value={newLocName} onChange={(e) => setNewLocName(e.target.value)} onKeyDown={(e) => e.key==="Enter" && addLocation()} placeholder="Nafn verkefnis" style={{ ...inputStyle, flex:1 }} autoFocus />
             <button onClick={addLocation} style={btnPrimary}>Bæta við</button>
             <button onClick={() => setShowAddLoc(false)} style={btnSecondary}>×</button>
           </div>
         ) : (
-          <button onClick={() => setShowAddLoc(true)} style={{ ...btnSecondary, fontSize:12, marginTop:4, width:"100%" }}>+ Bæta við staðsetningu</button>
+          <button onClick={() => setShowAddLoc(true)} style={{ ...btnSecondary, fontSize:12, marginTop:4, width:"100%" }}>+ Bæta við verkefni</button>
         )}
       </div>
     </div>
