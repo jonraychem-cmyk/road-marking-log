@@ -421,16 +421,14 @@ function TriangleMode({ onDone, onCancel }) {
   const wasRestored = stops.length > 0 || count > 0;
 
   return (
-    <div style={{ background:"#1a1a1a", border:"1px solid #333", borderRadius:8, padding:16, marginTop:8 }}>
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.92)", zIndex:200, display:"flex", flexDirection:"column", padding:"20px 16px 32px", fontFamily:"'Inter', system-ui, sans-serif" }}>
       {/* Header with cancel */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-        <div style={{ fontWeight:700, color:"#e0e0e0", fontSize:14 }}>Þríhyrningar</div>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <span style={{ color:"#555", fontSize:12 }}>
-            {stops.length > 0 && `${stops.length} stopp · ${total} samtals`}
-          </span>
-          <button onClick={() => { localStorage.removeItem(TRI_KEY); onCancel(); }} style={{ background:"none", border:"1px solid #444", borderRadius:6, color:"#888", fontSize:12, padding:"3px 10px", cursor:"pointer" }}>Hætta við</button>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+        <div>
+          <div style={{ fontWeight:700, color:"#e0e0e0", fontSize:16 }}>Þríhyrningar</div>
+          {stops.length > 0 && <div style={{ color:"#555", fontSize:12, marginTop:2 }}>{stops.length} stopp · {total} samtals</div>}
         </div>
+        <button onClick={() => { localStorage.removeItem(TRI_KEY); onCancel(); }} style={{ background:"none", border:"1px solid #444", borderRadius:8, color:"#888", fontSize:13, padding:"6px 14px", cursor:"pointer" }}>Hætta við</button>
       </div>
       {wasRestored && (
         <div style={{ background:"#1a2a1a", border:"1px solid #2a4a2a", borderRadius:6, padding:"6px 10px", marginBottom:10, color:"#4a9a4a", fontSize:12 }}>
@@ -440,7 +438,7 @@ function TriangleMode({ onDone, onCancel }) {
 
       {/* Stop log */}
       {stops.length > 0 && (
-        <div style={{ marginBottom:12, display:"flex", flexWrap:"wrap", gap:6 }}>
+        <div style={{ marginBottom:12, display:"flex", flexWrap:"wrap", gap:6, maxHeight:60, overflowY:"auto" }}>
           {stops.map((s) => (
             <span key={s.stop} style={{ background:"#111", border:"1px solid #2a2a2a", borderRadius:6, color:"#888", fontSize:12, padding:"3px 8px" }}>
               Stop {s.stop}: {s.count}
@@ -449,24 +447,26 @@ function TriangleMode({ onDone, onCancel }) {
         </div>
       )}
 
-      {/* Counter + quick buttons in one compact row */}
-      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+      {/* Counter */}
+      <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center" }}>
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
         <button onClick={() => adjust(-1)}
-          style={{ width:48, height:48, borderRadius:"50%", background:count>0?"#2a2a2a":"#111", border:"2px solid #333", color:"#e0e0e0", fontSize:24, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>−</button>
+          style={{ width:64, height:64, borderRadius:"50%", background:count>0?"#2a2a2a":"#111", border:"2px solid #333", color:"#e0e0e0", fontSize:32, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>−</button>
         <div style={{ textAlign:"center", minWidth:48 }}>
-          <div style={{ fontSize:44, fontWeight:800, color:"#e0e0e0", lineHeight:1 }}>{count}</div>
+          <div style={{ fontSize:72, fontWeight:800, color:"#e0e0e0", lineHeight:1, textAlign:"center" }}>{count}</div>
         </div>
         <button onClick={() => adjust(1)}
-          style={{ width:48, height:48, borderRadius:"50%", background:count<10?"#2a3a2a":"#111", border:"2px solid #333", color:count<10?"#4a9a4a":"#444", fontSize:24, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>+</button>
+          style={{ width:64, height:64, borderRadius:"50%", background:count<10?"#2a3a2a":"#111", border:"2px solid #333", color:count<10?"#4a9a4a":"#444", fontSize:32, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>+</button>
         <div style={{ display:"flex", flexWrap:"wrap", gap:4, flex:1, justifyContent:"center" }}>
           {[1,2,3,4,5,6,7,8,9,10].map((n) => (
-            <button key={n} onClick={() => setCountVal(n)} style={{ width:32, height:32, borderRadius:6, background:count===n?"#e8f0e8":"#111", color:count===n?"#111":"#666", border:`1px solid ${count===n?"#e8f0e8":"#2a2a2a"}`, fontSize:13, fontWeight:count===n?700:400, cursor:"pointer" }}>
+            <button key={n} onClick={() => setCountVal(n)} style={{ width:40, height:40, borderRadius:8, background:count===n?"#e8f0e8":"#1a1a1a", color:count===n?"#111":"#666", border:`1px solid ${count===n?"#e8f0e8":"#2a2a2a"}`, fontSize:15, fontWeight:count===n?700:400, cursor:"pointer" }}>
               {n}
             </button>
           ))}
         </div>
       </div>
 
+      </div>{/* end counter flex */}
       {/* Actions */}
       <div style={{ display:"flex", gap:8 }}>
         <button onClick={logStop} disabled={count===0}
@@ -632,6 +632,15 @@ function DrawingsSection({ drawings, onUpdate }) {
   );
 }
 
+function timeAgo(isoString) {
+  if (!isoString) return null;
+  const diff = Math.floor((Date.now() - new Date(isoString)) / 1000);
+  if (diff < 60) return "rétt í þessu";
+  if (diff < 3600) return `${Math.floor(diff/60)} mín síðan`;
+  if (diff < 86400) return `${Math.floor(diff/3600)} klst síðan`;
+  return `${Math.floor(diff/86400)} d síðan`;
+}
+
 // ── Location Log ──────────────────────────────────────────────────────────────
 function openMaps(address) {
   const encoded = encodeURIComponent(address);
@@ -650,6 +659,8 @@ function LocationLog({ location, project, onUpdate }) {
   const [addressDraft, setAddressDraft] = useState(location.address || "");
 
   const addItem = useCallback(async (item) => {
+    // Add timestamp to item
+    item.timestamp = new Date().toISOString();
     // Update local state immediately
     onUpdate({ ...location, workItems:[...location.workItems, item] });
     setShowForm(false);
@@ -721,12 +732,19 @@ function LocationLog({ location, project, onUpdate }) {
         </div>
       )}
       {location.workItems.length===0 && <div style={{ color:"#444", fontSize:13, marginBottom:8 }}>No work logged yet</div>}
-      {location.workItems.map((item) => (
-        <div key={item.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"#1a1a1a", borderRadius:6, padding:"6px 10px", marginBottom:6, fontSize:13, color:"#ccc" }}>
-          <span>{item.label}</span>
-          <button onClick={() => removeItem(item.id)} style={{ background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:16, lineHeight:1, padding:"0 4px" }}>×</button>
-        </div>
-      ))}
+      {location.workItems.map((item, idx) => {
+        const isLast = idx === location.workItems.length - 1;
+        const ago = isLast && item.timestamp ? timeAgo(item.timestamp) : null;
+        return (
+          <div key={item.id} style={{ background:"#1a1a1a", borderRadius:6, padding:"6px 10px", marginBottom:6 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:13, color:"#ccc" }}>
+              <span>{item.label}</span>
+              <button onClick={() => removeItem(item.id)} style={{ background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:16, lineHeight:1, padding:"0 4px" }}>×</button>
+            </div>
+            {ago && <div style={{ color:"#4a6a4a", fontSize:11, marginTop:2 }}>⏱ {ago}</div>}
+          </div>
+        );
+      })}
       {showForm ? (
         <WorkItemForm onAdd={addItem} onCancel={() => setShowForm(false)} />
       ) : (
