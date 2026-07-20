@@ -361,6 +361,12 @@ function TriangleMode({ onDone, onCancel, label="Þríhyrningar" }) {
   const [stops, setStops] = useState(() => {
     try { return JSON.parse(localStorage.getItem(storageKey))?.stops || []; } catch { return []; }
   });
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const clockStr = now.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
 
   // Persist every change to localStorage
   const persist = (newCount, newStops) => {
@@ -380,20 +386,12 @@ function TriangleMode({ onDone, onCancel, label="Þríhyrningar" }) {
 
   const total = stops.reduce((s, x) => s + x.count, 0);
 
-  // Block pull-to-refresh only when at top of page
-  useEffect(() => {
-    const prevent = (e) => {
-      if (window.scrollY === 0 && e.touches[0].clientY > 0) {
-        e.preventDefault();
-      }
-    };
-    document.addEventListener("touchmove", prevent, { passive: false });
-    return () => document.removeEventListener("touchmove", prevent);
-  }, []);
+
 
   const logStop = () => {
     if (count === 0) return;
-    const newStops = [...stops, { stop: stops.length + 1, count }];
+    const t = new Date().toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
+    const newStops = [...stops, { stop: stops.length + 1, count, time: t }];
     setStops(newStops);
     setCount(0);
     persist(0, newStops);
@@ -443,7 +441,7 @@ function TriangleMode({ onDone, onCancel, label="Þríhyrningar" }) {
         <div style={{ marginBottom:12, display:"flex", flexWrap:"wrap", gap:6, maxHeight:60, overflowY:"auto" }}>
           {stops.map((s) => (
             <span key={s.stop} style={{ background:"#111", border:"1px solid #2a2a2a", borderRadius:6, color:"#888", fontSize:12, padding:"3px 8px" }}>
-              Stop {s.stop}: {s.count}
+              {s.time && <span style={{ color:"#4a6a4a" }}>{s.time} · </span>}Stop {s.stop}: {s.count}
             </span>
           ))}
         </div>
