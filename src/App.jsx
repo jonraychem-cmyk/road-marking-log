@@ -122,7 +122,7 @@ const ZEBRA_SIZES = ["50x300","50x250","50x240","50x200","50x120","Sérsniðið"
 const METER_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Miðlínur","Kantlínur","Gular línur","Gulur kantur","Skott","Formerking","Línur","Hvítar línur","Hvítar línur + formerking","Gul lína","Gular línur"];
 const PIECE_TYPES = ["Blár ferningur","Blár bakgrunnur","Grænn bakgrunnur","Grænn ferningur"];
 const STENCIL_NAMES = ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkall","Hjólhýsi","Hjól","Annað"];
-const DEFAULT_WORK_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Gular línur","Gulur kantur","Miðlínur","Kantlínur","Skott",...PIECE_TYPES,"Stencil","Gangbraut","Þríhyrningar","Formerking"];
+const DEFAULT_WORK_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Gular línur","Gulur kantur","Miðlínur","Kantlínur","Skott",...PIECE_TYPES,"Stencil","Gangbraut","Þríhyrningar","Ferningar 50x50","Formerking"];
 const WORK_TYPES = DEFAULT_WORK_TYPES;
 // Clear stale work type cache so new names take effect
 try {
@@ -353,17 +353,18 @@ function ContactSection({ contacts=[], onUpdate }) {
 // ── Þríhyrningar Mode ────────────────────────────────────────────────────────
 const TRI_KEY = "rml_triangle_session";
 
-function TriangleMode({ onDone, onCancel }) {
+function TriangleMode({ onDone, onCancel, label="Þríhyrningar" }) {
+  const storageKey = label === "Ferningar 50x50" ? "rml_ferningar_session" : TRI_KEY;
   const [count, setCount] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(TRI_KEY))?.count || 0; } catch { return 0; }
+    try { return JSON.parse(localStorage.getItem(storageKey))?.count || 0; } catch { return 0; }
   });
   const [stops, setStops] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(TRI_KEY))?.stops || []; } catch { return []; }
+    try { return JSON.parse(localStorage.getItem(storageKey))?.stops || []; } catch { return []; }
   });
 
   // Persist every change to localStorage
   const persist = (newCount, newStops) => {
-    localStorage.setItem(TRI_KEY, JSON.stringify({ count: newCount, stops: newStops }));
+    localStorage.setItem(storageKey, JSON.stringify({ count: newCount, stops: newStops }));
   };
 
   const adjust = (n) => {
@@ -400,7 +401,7 @@ function TriangleMode({ onDone, onCancel }) {
 
   const finish = () => {
     if (stops.length === 0 && count === 0) { 
-      localStorage.removeItem(TRI_KEY);
+      localStorage.removeItem(storageKey);
       onCancel(); 
       return; 
     }
@@ -409,12 +410,12 @@ function TriangleMode({ onDone, onCancel }) {
     const stopSummary = finalStops.map((s) => `Stop ${s.stop}: ${s.count}`).join(", ");
     const item = {
       id: Date.now(),
-      type: "Þríhyrningar",
+      type: label,
       quantity: finalTotal,
       stops: finalStops,
-      label: `Þríhyrningar: ${finalTotal} total (${stopSummary})`,
+      label: `${label}: ${finalTotal} samtals (${stopSummary})`,
     };
-    localStorage.removeItem(TRI_KEY);
+    localStorage.removeItem(storageKey);
     onDone(item);
   };
 
@@ -425,7 +426,7 @@ function TriangleMode({ onDone, onCancel }) {
       {/* Header with cancel */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
         <div>
-          <div style={{ fontWeight:700, color:"#e0e0e0", fontSize:16 }}>Þríhyrningar</div>
+          <div style={{ fontWeight:700, color:"#e0e0e0", fontSize:16 }}>{label}</div>
           {stops.length > 0 && <div style={{ color:"#555", fontSize:12, marginTop:2 }}>{stops.length} stopp · {total} samtals</div>}
         </div>
         <button onClick={() => { localStorage.removeItem(TRI_KEY); onCancel(); }} style={{ background:"none", border:"1px solid #444", borderRadius:8, color:"#888", fontSize:13, padding:"6px 14px", cursor:"pointer" }}>Hætta við</button>
@@ -498,7 +499,7 @@ function WorkItemForm({ onAdd, onCancel }) {
   const isPiece = PIECE_TYPES.includes(type);
   const isStencil = type === "Stencil";
   const isGangbraut = type === "Gangbraut";
-  const isTriangle = type === "Þríhyrningar";
+  const isTriangle = type === "Þríhyrningar" || type === "Ferningar 50x50";
 
   const handleAdd = () => {
     let item = { type, id: Date.now() };
@@ -526,7 +527,7 @@ function WorkItemForm({ onAdd, onCancel }) {
     onAdd(item);
   };
 
-  if (isTriangle) return <TriangleMode onDone={onAdd} onCancel={onCancel} />;
+  if (isTriangle) return <TriangleMode onDone={onAdd} onCancel={onCancel} label={type} />;
 
   return (
     <div style={{ background:"#1a1a1a", border:"1px solid #333", borderRadius:8, padding:16, marginTop:8 }}>
