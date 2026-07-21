@@ -122,7 +122,7 @@ const ZEBRA_SIZES = ["50x300","50x250","50x240","50x200","50x120","Sérsniðið"
 const METER_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Miðlínur","Kantlínur","Gular línur","Gulur kantur","Skott","Formerking","Línur","Hvítar línur","Hvítar línur + formerking","Gul lína","Gular línur"];
 const PIECE_TYPES = ["Blár ferningur","Blár bakgrunnur","Grænn bakgrunnur","Grænn ferningur"];
 const STENCIL_NAMES = ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkall","Hjólhýsi","Hjól","Annað"];
-const DEFAULT_WORK_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Gular línur","Gulur kantur","Miðlínur","Kantlínur","Skott",...PIECE_TYPES,"Stencil","Gangbraut","Þríhyrningar","Ferningar 50x50","Formerking"];
+const DEFAULT_WORK_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Gular línur","Gulur kantur","Miðlínur","Kantlínur","Skott",...PIECE_TYPES,"Stencil","Gangbraut","Þríhyrningar","Ferningar 50x50","Formerking","Annað"];
 const WORK_TYPES = DEFAULT_WORK_TYPES;
 // Clear stale work type cache so new names take effect
 try {
@@ -501,12 +501,15 @@ function WorkItemForm({ onAdd, onCancel }) {
   const [zebraSize, setZebraSize] = useState("50x300");
   const [zebraCustom, setZebraCustom] = useState("");
   const [zebraQty, setZebraQty] = useState("");
+  const [otherDesc, setOtherDesc] = useState("");
+  const [otherQty, setOtherQty] = useState("");
 
   const isMeter = METER_TYPES.includes(type);
   const isPiece = PIECE_TYPES.includes(type);
   const isStencil = type === "Stencil";
   const isGangbraut = type === "Gangbraut";
   const isTriangle = type === "Þríhyrningar" || type === "Ferningar 50x50";
+  const isOther = type === "Annað";
 
   const handleAdd = () => {
     let item = { type, id: Date.now() };
@@ -530,6 +533,11 @@ function WorkItemForm({ onAdd, onCancel }) {
       item.size = sz;
       item.quantity = zebraQty;
       item.label = "Gangbraut " + sz + "cm x " + zebraQty;
+    } else if (isOther) {
+      if (!otherDesc.trim()) return;
+      item.description = otherDesc.trim();
+      item.quantity = otherQty;
+      item.label = otherDesc.trim() + (otherQty ? " x " + otherQty : "");
     }
     onAdd(item);
   };
@@ -575,6 +583,21 @@ function WorkItemForm({ onAdd, onCancel }) {
           <div style={{ marginBottom:10 }}>
             <label style={labelStyle}>Fjöldi</label>
             <input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="t.d. 4" style={inputStyle} />
+          </div>
+        </div>
+      )}
+
+      {isOther && (
+        <div>
+          <div style={{ marginBottom:10 }}>
+            <label style={labelStyle}>Lýsing</label>
+            <input type="text" value={otherDesc} onChange={(e) => setOtherDesc(e.target.value)}
+              placeholder="t.d. Instavolt primark logo" style={inputStyle} />
+          </div>
+          <div style={{ marginBottom:10 }}>
+            <label style={labelStyle}>Fjöldi (valkvæmt)</label>
+            <input type="number" value={otherQty} onChange={(e) => setOtherQty(e.target.value)}
+              placeholder="t.d. 3" style={inputStyle} />
           </div>
         </div>
       )}
