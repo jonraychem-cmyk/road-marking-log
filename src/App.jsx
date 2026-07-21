@@ -1533,7 +1533,7 @@ function NewProjectForm({ onAdd, onCancel }) {
       <div style={{ marginBottom:10 }}>
         <label style={labelStyle}>Tegund verkefnis</label>
         <div style={{ display:"flex", gap:8 }}>
-          {[{val:"seasonal",label:"🔄 Tímabundið"},{val:"oneoff",label:"1️⃣ Einstakt"}].map((t) => (
+          {[{val:"seasonal",label:"🔄 Árleg verk"},{val:"oneoff",label:"1️⃣ Einstök verk"}].map((t) => (
             <button key={t.val} onClick={() => setProjectType(t.val)} style={{ flex:1, background:projectType===t.val?"#e8f0e8":"#111", color:projectType===t.val?"#111":"#666", border:`1px solid ${projectType===t.val?"#e8f0e8":"#333"}`, borderRadius:8, padding:"8px", fontSize:13, fontWeight:projectType===t.val?700:400, cursor:"pointer" }}>
               {t.label}
             </button>
@@ -1547,6 +1547,60 @@ function NewProjectForm({ onAdd, onCancel }) {
 }
 
 // ── App Root ──────────────────────────────────────────────────────────────────
+// ── New Season Modal ──────────────────────────────────────────────────────────
+function NewSeasonModal({ onConfirm, onCancel }) {
+  const [entered, setEntered] = useState("");
+  const [error, setError] = useState(false);
+  const SEASON_PIN = "180583";
+
+  const press = (val) => {
+    if (entered.length >= SEASON_PIN.length) return;
+    const next = entered + val;
+    setEntered(next);
+    if (next.length === SEASON_PIN.length) {
+      if (next === SEASON_PIN) {
+        onConfirm();
+      } else {
+        setError(true);
+        setTimeout(() => { setError(false); setEntered(""); }, 800);
+      }
+    }
+  };
+
+  const del = () => { setEntered(entered.slice(0, -1)); setError(false); };
+  const keys = [["1","2","3"],["4","5","6"],["7","8","9"],["","0","⌫"]];
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Inter', system-ui, sans-serif" }}>
+      <div style={{ background:"#161616", border:"1px solid #333", borderRadius:12, padding:24, width:300, textAlign:"center" }}>
+        <div style={{ fontWeight:700, color:"#e0e0e0", fontSize:16, marginBottom:6 }}>🔄 Nýtt tímabil</div>
+        <div style={{ color:"#666", fontSize:13, marginBottom:6, lineHeight:1.5, textAlign:"left" }}>Með því að velja nýtt tímabil hverfa allar skráðar tölur um vinnumagn frá síðasta tímabili. Allar aðrar upplýsingar, svo sem teikningar, tengiliðir og tékklistar haldast óbreyttar.</div>
+        <div style={{ color:"#888", fontSize:12, marginBottom:16 }}>Sláðu inn PIN til að staðfesta</div>
+
+        {/* Dots */}
+        <div style={{ display:"flex", gap:12, justifyContent:"center", marginBottom:20 }}>
+          {Array.from({length: SEASON_PIN.length}, (_, i) => (
+            <div key={i} style={{ width:12, height:12, borderRadius:"50%", background: error ? "#c05050" : i < entered.length ? "#e8f0e8" : "transparent", border:`2px solid ${error ? "#c05050" : i < entered.length ? "#e8f0e8" : "#444"}`, transition:"all 0.15s" }} />
+          ))}
+        </div>
+
+        {error && <div style={{ color:"#c05050", fontSize:12, marginBottom:10 }}>Rangt PIN</div>}
+
+        {/* Numpad */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:8, marginBottom:14 }}>
+          {keys.flat().map((k, i) => (
+            <button key={i} onClick={() => k==="⌫" ? del() : k ? press(k) : null}
+              style={{ height:52, borderRadius:10, background:k?"#1a1a1a":"transparent", border:k?"1px solid #2a2a2a":"none", color:k==="⌫"?"#666":"#e0e0e0", fontSize:k==="⌫"?18:22, fontWeight:600, cursor:k?"pointer":"default" }}>
+              {k}
+            </button>
+          ))}
+        </div>
+        <button onClick={onCancel} style={{ ...{background:"none", border:"1px solid #333", borderRadius:8, color:"#666", fontSize:13, padding:"8px 24px", cursor:"pointer", width:"100%"} }}>Hætta við</button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [authed, setAuthed] = useState(() => localStorage.getItem("rml_auth") === "1");
   const [projects, setProjects] = useState([]);
@@ -1555,29 +1609,30 @@ export default function App() {
   const [filter, setFilter] = useState("active");
   const [search, setSearch] = useState("");
   const [carFilter, setCarFilter] = useState("all");
-  const [workMode, setWorkMode] = useState(() => localStorage.getItem('rml_workmode') || null);
+  const [workMode, setWorkMode] = useState(() => localStorage.getItem("rml_workmode") || null);
   const [showHours, setShowHours] = useState(false);
   const [showTrips, setShowTrips] = useState(false);
   const [showPrivate, setShowPrivate] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [seasonFilter, setSeasonFilter] = useState("all"); // all | seasonal | oneoff
+  const [seasonFilter, setSeasonFilter] = useState("all");
+  const [showNewSeason, setShowNewSeason] = useState(false);
 
-  // Load projects from sheet on startup
   useEffect(() => {
+    if (!authed) return;
     loadProjectsFromSheet()
       .then((data) => { if (Array.isArray(data) && data.length > 0) setProjects(data); else setProjects(initialProjects); })
       .catch(() => setProjects(initialProjects))
       .finally(() => setLoading(false));
-  }, []);
+  }, [authed]);
 
-  // Save projects to sheet whenever they change
   useEffect(() => {
-    if (!loading && projects.length > 0) saveProjectsToSheet(projects).catch(console.error);
-  }, [projects, loading]);
+    if (!loading && authed && projects.length > 0) saveProjectsToSheet(projects).catch(console.error);
+  }, [projects, loading, authed]);
 
   const addProject = (p) => { setProjects((prev) => [p,...prev]); setShowNew(false); };
   const updateProject = (p) => setProjects((prev) => prev.map((x) => x.id===p.id ? p : x));
   const deleteProject = (id) => setProjects((prev) => prev.filter((p) => p.id!==id));
+
   const backupProjects = () => {
     const data = JSON.stringify(projects, null, 2);
     const blob = new Blob([data], { type:"application/json" });
@@ -1590,15 +1645,11 @@ export default function App() {
   };
 
   const newSeason = () => {
-    if (!window.confirm("Byrja nýtt tímabil? Öll tímabundin verkefni verða endurræst með tómum skráningum.")) return;
     setProjects((prev) => prev.map((p) => {
       if (p.projectType !== "seasonal") return p;
-      return {
-        ...p,
-        finished: false,
-        locations: p.locations.map((l) => ({ ...l, workItems: [] })),
-      };
+      return { ...p, finished:false, locations:p.locations.map((l) => ({ ...l, workItems:[] })) };
     }));
+    setShowNewSeason(false);
   };
 
   const moveProject = (id, dir) => {
@@ -1623,14 +1674,16 @@ export default function App() {
 
   const workProject = workMode ? projects.find((p) => String(p.id)===String(workMode)) : null;
 
-  if (!authed) {
-    return <PinScreen onUnlock={() => setAuthed(true)} />;
+  if (!authed) return <PinScreen onUnlock={() => setAuthed(true)} />;
+
+  if (showNewSeason) {
+    return <NewSeasonModal onConfirm={newSeason} onCancel={() => setShowNewSeason(false)} />;
   }
 
   if (loading) {
     return (
       <div style={{ minHeight:"100vh", background:"#0a0a0a", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Inter', system-ui, sans-serif" }}>
-        <div style={{ color:"#444", fontSize:14 }}>Loading projects…</div>
+        <div style={{ color:"#444", fontSize:14 }}>Hleður verkefni…</div>
       </div>
     );
   }
@@ -1640,7 +1693,7 @@ export default function App() {
       <WorkMode
         project={workProject}
         onUpdate={updateProject}
-        onExit={() => { localStorage.removeItem('rml_workmode'); setWorkMode(null); }}
+        onExit={() => { localStorage.removeItem("rml_workmode"); setWorkMode(null); }}
       />
     );
   }
@@ -1652,24 +1705,24 @@ export default function App() {
           <div>
             <div style={{ fontWeight:800, fontSize:18, letterSpacing:-0.5 }}>Road Marking Log</div>
             <div style={{ color:"#444", fontSize:12 }}>
-              {projects.filter((p) => !p.finished).length} active · {projects.filter((p) => p.finished).length} finished
+              {projects.filter((p) => !p.finished).length} virk · {projects.filter((p) => p.finished).length} lokið
             </div>
           </div>
-          <button onClick={() => setShowNew(!showNew)} style={{ ...btnPrimary, borderRadius:20, padding:"8px 18px", fontSize:13 }}>
-            {showNew?"Cancel":"+ Project"}
+          <button onClick={() => setShowNew(!showNew)} style={{ background:"#e8f0e8", color:"#111", border:"none", borderRadius:20, padding:"8px 18px", fontWeight:700, fontSize:13, cursor:"pointer" }}>
+            {showNew ? "Hætta við" : "+ Verkefni"}
           </button>
         </div>
-        <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search projects..." style={{ ...inputStyle, marginBottom:10 }} />
+        <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Leita að verkefnum..." style={{ ...inputStyle, marginBottom:10 }} />
         <div style={{ display:"flex", gap:6, marginBottom:8 }}>
           {["active","finished","all"].map((f) => (
-            <button key={f} onClick={() => setFilter(f)} style={{ background:filter===f?"#e8f0e8":"none", color:filter===f?"#111":"#666", border:filter===f?"none":"1px solid #222", borderRadius:16, padding:"5px 14px", fontSize:12, cursor:"pointer", fontWeight:filter===f?700:400, textTransform:"capitalize" }}>{f}</button>
+            <button key={f} onClick={() => setFilter(f)} style={{ background:filter===f?"#e8f0e8":"none", color:filter===f?"#111":"#666", border:filter===f?"none":"1px solid #222", borderRadius:16, padding:"5px 14px", fontSize:12, cursor:"pointer", fontWeight:filter===f?700:400, textTransform:"capitalize" }}>
+              {f==="active"?"Virk":f==="finished"?"Lokið":"Öll"}
+            </button>
           ))}
         </div>
         {/* Row 1 — Vehicle filter */}
         <div style={{ display:"flex", gap:6, marginBottom:8, paddingBottom:2 }}>
-          <div onClick={() => setCarFilter("all")} style={{ cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, flex:1,
-            background:carFilter==="all"?"#1a2a3a":"none", border:`1px solid ${carFilter==="all"?"#2a4a6a":"#222"}`,
-            borderRadius:10, padding:"6px 4px" }}>
+          <div onClick={() => setCarFilter("all")} style={{ cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, flex:1, background:carFilter==="all"?"#1a2a3a":"none", border:`1px solid ${carFilter==="all"?"#2a4a6a":"#222"}`, borderRadius:10, padding:"6px 4px" }}>
             <span style={{ fontSize:18 }}>🚗</span>
             <span style={{ fontSize:10, color:carFilter==="all"?"#6aacf0":"#555", fontWeight:carFilter==="all"?700:400 }}>Allir</span>
           </div>
@@ -1679,34 +1732,39 @@ export default function App() {
             </div>
           ))}
         </div>
-        {/* Row 2 — Season filter */}
-        <div style={{ display:"flex", gap:6, marginBottom:8 }}>
-          {[{val:"all",label:"Öll"},{val:"seasonal",label:"🔄 Tímabundin"},{val:"oneoff",label:"1️⃣ Einstök"}].map((f) => (
-            <button key={f.val} onClick={() => setSeasonFilter(f.val)} style={{ background:seasonFilter===f.val?"#e8f0e8":"none", color:seasonFilter===f.val?"#111":"#666", border:seasonFilter===f.val?"none":"1px solid #222", borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:seasonFilter===f.val?700:400 }}>
-              {f.label}
-            </button>
-          ))}
-          <button onClick={backupProjects} style={{ marginLeft:"auto", background:"none", border:"1px solid #222", borderRadius:16, padding:"5px 12px", fontSize:12, color:"#555", cursor:"pointer" }}>💾 Backup</button>
-          <button onClick={newSeason} style={{ background:"#1a2a1a", border:"1px solid #2a4a2a", borderRadius:16, padding:"5px 12px", fontSize:12, color:"#4a9a4a", cursor:"pointer" }}>🔄 Nýtt tímabil</button>
-        </div>
-        {/* Row 3 — Tools */}
-        <div style={{ display:"flex", gap:6, justifyContent:"flex-end" }}>
+        {/* Row 2 — Tools */}
+        <div style={{ display:"flex", gap:6, justifyContent:"flex-end", marginBottom:8 }}>
           <button onClick={() => { setShowTrips(!showTrips); setShowHours(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showTrips?"#1a2a1a":"none", color:showTrips?"#4a9a4a":"#555", border:`1px solid ${showTrips?"#2a4a2a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>🗺 Ferðir</button>
           <button onClick={() => { setShowHours(!showHours); setShowTrips(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showHours?"#1a2a3a":"none", color:showHours?"#6aacf0":"#555", border:`1px solid ${showHours?"#2a4a6a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⏱ Vinnustundir</button>
           <button onClick={() => { setShowPrivate(!showPrivate); setShowHours(false); setShowTrips(false); setShowSettings(false); }} style={{ background:showPrivate?"#2a1a2a":"none", color:showPrivate?"#a06ac0":"#555", border:`1px solid ${showPrivate?"#4a2a5a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>🎒</button>
           <button onClick={() => { setShowSettings(!showSettings); setShowPrivate(false); setShowHours(false); setShowTrips(false); }} style={{ background:showSettings?"#2a2a1a":"none", color:showSettings?"#c0a040":"#555", border:`1px solid ${showSettings?"#5a4a10":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⚙️</button>
         </div>
+        {/* Row 3 — Season filter */}
+        <div style={{ display:"flex", gap:6 }}>
+          {[{val:"all",label:"Öll"},{val:"seasonal",label:"🔄 Árleg verk"},{val:"oneoff",label:"1️⃣ Einstök verk"}].map((f) => (
+            <button key={f.val} onClick={() => setSeasonFilter(f.val)} style={{ background:seasonFilter===f.val?"#e8f0e8":"none", color:seasonFilter===f.val?"#111":"#666", border:seasonFilter===f.val?"none":"1px solid #222", borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:seasonFilter===f.val?700:400 }}>
+              {f.label}
+            </button>
+          ))}
+          <button onClick={backupProjects} style={{ marginLeft:"auto", background:"none", border:"1px solid #222", borderRadius:16, padding:"5px 12px", fontSize:12, color:"#555", cursor:"pointer" }}>💾 Backup</button>
+          <button onClick={() => setShowNewSeason(true)} style={{ background:"#1a2a1a", border:"1px solid #2a4a2a", borderRadius:16, padding:"5px 12px", fontSize:12, color:"#4a9a4a", cursor:"pointer" }}>🔄 Nýtt tímabil</button>
+        </div>
       </div>
+
       <div style={{ padding:"16px 16px 0" }}>
         {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
         {showPrivate && <PrivateChecklist onClose={() => setShowPrivate(false)} />}
         {showHours && <HoursTracker onClose={() => setShowHours(false)} />}
         {showTrips && <TripsView projects={projects} onClose={() => setShowTrips(false)} />}
         {showNew && <NewProjectForm onAdd={addProject} onCancel={() => setShowNew(false)} />}
-        {filtered.length===0 && <div style={{ textAlign:"center", color:"#444", padding:"40px 20px", fontSize:14 }}>{search?"No projects match your search":"No projects here yet"}</div>}
+        {filtered.length===0 && (
+          <div style={{ textAlign:"center", color:"#444", padding:"40px 20px", fontSize:14 }}>
+            {search ? "Engin verkefni passa við leitina" : "Engin verkefni hér ennþá"}
+          </div>
+        )}
         {filtered.map((p, i) => (
           <ProjectCard key={p.id} project={p} onUpdate={updateProject} onDelete={deleteProject}
-            onStartWork={() => { const id = String(p.id); localStorage.setItem('rml_workmode', id); setWorkMode(id); }}
+            onStartWork={() => { const id = String(p.id); localStorage.setItem("rml_workmode", id); setWorkMode(id); }}
             onMoveUp={() => moveProject(p.id, -1)}
             onMoveDown={() => moveProject(p.id, 1)}
             isFirst={i===0} isLast={i===filtered.length-1}
