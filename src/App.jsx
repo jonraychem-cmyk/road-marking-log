@@ -688,6 +688,7 @@ function LocationLog({ location, project, onUpdate, onDelete }) {
   const [syncStatus, setSyncStatus] = useState(null);
   const [editingAddress, setEditingAddress] = useState(false);
   const [addressDraft, setAddressDraft] = useState(location.address || "");
+  const [showItems, setShowItems] = useState(false);
 
   const addItem = useCallback(async (item) => {
     // Add timestamp to item
@@ -1520,7 +1521,7 @@ function NewProjectForm({ onAdd, onCancel }) {
   const [notes, setNotes] = useState("");
   const handleAdd = () => {
     if (!name.trim()) return;
-    onAdd({ id:Date.now(), name:name.trim(), region, subRegion, assignedTo, notes, finished:false, drawings:[], locations:[], contacts:[], checklist:[] });
+    onAdd({ id:Date.now(), name:name.trim(), region, subRegion, assignedTo, notes, finished:false, drawings:[], locations:[], contacts:[], checklist:[], projectType: projectType });
   };
   return (
     <div style={{ background:"#161616", border:"1px solid #333", borderRadius:10, padding:16, marginBottom:16 }}>
@@ -1529,7 +1530,17 @@ function NewProjectForm({ onAdd, onCancel }) {
       <div style={{ marginBottom:10 }}><label style={labelStyle}>Region</label><select value={region} onChange={(e) => { setRegion(e.target.value); setSubRegion(""); }} style={selectStyle}>{(JSON.parse(localStorage.getItem("rml_regions")||"null")||REGIONS).map((r) => <option key={r}>{r}</option>)}</select></div>
       {SUB_REGIONS[region]&&SUB_REGIONS[region].length>0 && <div style={{ marginBottom:10 }}><label style={labelStyle}>Sub-region</label><select value={subRegion} onChange={(e) => setSubRegion(e.target.value)} style={selectStyle}><option value="">None</option>{SUB_REGIONS[region].map((s) => <option key={s}>{s}</option>)}</select></div>}
       {region==="South" && <div style={{ marginBottom:10 }}><label style={labelStyle}>Assign to</label><select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} style={selectStyle}>{CARS.map((c) => <option key={c}>{c}</option>)}</select></div>}
-      <div style={{ marginBottom:14 }}><label style={labelStyle}>Notes</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Special instructions…" style={{ ...inputStyle, height:70, resize:"vertical" }} /></div>
+      <div style={{ marginBottom:10 }}>
+        <label style={labelStyle}>Tegund verkefnis</label>
+        <div style={{ display:"flex", gap:8 }}>
+          {[{val:"seasonal",label:"🔄 Tímabundið"},{val:"oneoff",label:"1️⃣ Einstakt"}].map((t) => (
+            <button key={t.val} onClick={() => setProjectType(t.val)} style={{ flex:1, background:projectType===t.val?"#e8f0e8":"#111", color:projectType===t.val?"#111":"#666", border:`1px solid ${projectType===t.val?"#e8f0e8":"#333"}`, borderRadius:8, padding:"8px", fontSize:13, fontWeight:projectType===t.val?700:400, cursor:"pointer" }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ marginBottom:14 }}><label style={labelStyle}>Athugasemdir</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Sérstakar leiðbeiningar…" style={{ ...inputStyle, height:70, resize:"vertical" }} /></div>
       <div style={{ display:"flex", gap:8 }}><button onClick={handleAdd} style={btnPrimary}>Create project</button><button onClick={onCancel} style={btnSecondary}>Cancel</button></div>
     </div>
   );
@@ -1549,6 +1560,7 @@ export default function App() {
   const [showTrips, setShowTrips] = useState(false);
   const [showPrivate, setShowPrivate] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [seasonFilter, setSeasonFilter] = useState("all"); // all | seasonal | oneoff
 
   // Load projects from sheet on startup
   useEffect(() => {
@@ -1566,6 +1578,29 @@ export default function App() {
   const addProject = (p) => { setProjects((prev) => [p,...prev]); setShowNew(false); };
   const updateProject = (p) => setProjects((prev) => prev.map((x) => x.id===p.id ? p : x));
   const deleteProject = (id) => setProjects((prev) => prev.filter((p) => p.id!==id));
+  const backupProjects = () => {
+    const data = JSON.stringify(projects, null, 2);
+    const blob = new Blob([data], { type:"application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `road-marking-backup-${new Date().toISOString().split("T")[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const newSeason = () => {
+    if (!window.confirm("Byrja nýtt tímabil? Öll tímabundin verkefni verða endurræst með tómum skráningum.")) return;
+    setProjects((prev) => prev.map((p) => {
+      if (p.projectType !== "seasonal") return p;
+      return {
+        ...p,
+        finished: false,
+        locations: p.locations.map((l) => ({ ...l, workItems: [] })),
+      };
+    }));
+  };
+
   const moveProject = (id, dir) => {
     setProjects((prev) => {
       const idx = prev.findIndex((p) => p.id===id);
@@ -1582,7 +1617,8 @@ export default function App() {
     const matchesFilter = filter==="all"||(filter==="active"&&!p.finished)||(filter==="finished"&&p.finished);
     const matchesSearch = !search||p.name.toLowerCase().includes(search.toLowerCase())||(p.subRegion&&p.subRegion.toLowerCase().includes(search.toLowerCase()));
     const matchesCar = carFilter==="all"||p.assignedTo===carFilter;
-    return matchesFilter && matchesSearch && matchesCar;
+    const matchesSeason = seasonFilter==="all"||(seasonFilter==="seasonal"&&p.projectType==="seasonal")||(seasonFilter==="oneoff"&&p.projectType==="oneoff");
+    return matchesFilter && matchesSearch && matchesCar && matchesSeason;
   });
 
   const workProject = workMode ? projects.find((p) => String(p.id)===String(workMode)) : null;
@@ -1643,7 +1679,17 @@ export default function App() {
             </div>
           ))}
         </div>
-        {/* Row 2 — Tools */}
+        {/* Row 2 — Season filter */}
+        <div style={{ display:"flex", gap:6, marginBottom:8 }}>
+          {[{val:"all",label:"Öll"},{val:"seasonal",label:"🔄 Tímabundin"},{val:"oneoff",label:"1️⃣ Einstök"}].map((f) => (
+            <button key={f.val} onClick={() => setSeasonFilter(f.val)} style={{ background:seasonFilter===f.val?"#e8f0e8":"none", color:seasonFilter===f.val?"#111":"#666", border:seasonFilter===f.val?"none":"1px solid #222", borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:seasonFilter===f.val?700:400 }}>
+              {f.label}
+            </button>
+          ))}
+          <button onClick={backupProjects} style={{ marginLeft:"auto", background:"none", border:"1px solid #222", borderRadius:16, padding:"5px 12px", fontSize:12, color:"#555", cursor:"pointer" }}>💾 Backup</button>
+          <button onClick={newSeason} style={{ background:"#1a2a1a", border:"1px solid #2a4a2a", borderRadius:16, padding:"5px 12px", fontSize:12, color:"#4a9a4a", cursor:"pointer" }}>🔄 Nýtt tímabil</button>
+        </div>
+        {/* Row 3 — Tools */}
         <div style={{ display:"flex", gap:6, justifyContent:"flex-end" }}>
           <button onClick={() => { setShowTrips(!showTrips); setShowHours(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showTrips?"#1a2a1a":"none", color:showTrips?"#4a9a4a":"#555", border:`1px solid ${showTrips?"#2a4a2a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>🗺 Ferðir</button>
           <button onClick={() => { setShowHours(!showHours); setShowTrips(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showHours?"#1a2a3a":"none", color:showHours?"#6aacf0":"#555", border:`1px solid ${showHours?"#2a4a6a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⏱ Vinnustundir</button>
