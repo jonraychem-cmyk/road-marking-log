@@ -106,6 +106,16 @@ function VehicleBadge({ name, active }) {
     </div>
   );
 }
+// Back-compat: projects may have assignedTo (string) or assignedCars (array)
+function carsOf(project) {
+  if (Array.isArray(project.assignedCars)) return project.assignedCars.filter(Boolean);
+  return project.assignedTo ? [project.assignedTo] : [];
+}
+function carsLabel(project) {
+  const cs = carsOf(project);
+  return cs.length ? cs.join(" · ") : "Óúthlutað";
+}
+
 const CHECKLIST_PRESETS = {
   "Stencil": ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkall","Hjólhýsi","Hjól"],
   "Þríhyrningar": ["Þríhyrningar"],
@@ -124,7 +134,7 @@ const btnSuccess = { background:"#1a3a1a", color:"#4a9a4a", border:"1px solid #2
 
 // ── Demo data ─────────────────────────────────────────────────────────────────
 const initialProjects = [
-  { id:1, name:"Keflavík flugvöllur", region:"Suðurland", subRegion:"Keflavík", assignedTo:"Sprinter", finished:false, notes:"", drawings:[], contacts:[], checklist:[], projectType:"seasonal",
+  { id:1, name:"Keflavík flugvöllur", region:"Suðurland", subRegion:"Keflavík", assignedCars:["Sprinter"], finished:false, notes:"", drawings:[], contacts:[], checklist:[], projectType:"seasonal",
     locations:[ { id:1, name:"Aðalstæði", workItems:[], address:"" }, { id:2, name:"Starfsmannastæði", workItems:[], address:"" } ] },
 ];
 
@@ -528,7 +538,7 @@ function LocationLog({ location, project, onUpdate, onDelete }) {
     setSyncStatus("syncing");
     const now = new Date();
     const timestamp = now.toLocaleString("en-GB", { day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" });
-    const row = [timestamp, project.name, project.region + (project.subRegion ? " > " + project.subRegion : ""), project.assignedTo || "", location.name, item.type, item.label, item.meters || item.quantity || "", item.size || ""];
+    const row = [timestamp, project.name, project.region + (project.subRegion ? " > " + project.subRegion : ""), carsOf(project).join(" / "), location.name, item.type, item.label, item.meters || item.quantity || "", item.size || ""];
     appendToSheet(row).catch(console.error);
     setSyncStatus("ok");
     setTimeout(() => setSyncStatus(null), 3000);
@@ -751,40 +761,148 @@ function PrivateChecklist({ onClose }) {
 }
 
 // ── Trips ─────────────────────────────────────────────────────────────────────
-function TripsView({ projects, onClose }) {
-  const [selected, setSelected] = useState([]);
-  const [tripName, setTripName] = useState("");
-  const [showChecklist, setShowChecklist] = useState(false);
+const TRIP_KEY = "rml_trip";
+function loadTrip() {
+  try { return JSON.parse(localStorage.getItem(TRIP_KEY)) || null; } catch { return null; }
+}
+
+function TripsView({ projects, carFilter, onClose, onStartWork }) {
+  const savedCars = JSON.parse(localStorage.getItem("rml_cars")||"null") || DEFAULT_CARS;
+  const saved = loadTrip();
+  const [car, setCar] = useState(saved?.car || (carFilter && carFilter !== "all" ? carFilter : (savedCars.filter((x)=>x!=="Óúthlutað")[0] || "")));
+  const [selected, setSelected] = useState(saved?.selected || []);
+  const [tripName, setTripName] = useState(saved?.tripName || "");
+  const [showChecklist, setShowChecklist] = useState(!!saved?.started);
+  const [ticked, setTicked] = useState(saved?.ticked || {});
+  const [startedAt] = useState(saved?.startedAt || null);
+
+  // persist on every change
+  useEffect(() => {
+    if (!selected.length && !tripName && !Object.keys(ticked).length) {
+      localStorage.removeItem(TRIP_KEY);
+      return;
+    }
+    localStorage.setItem(TRIP_KEY, JSON.stringify({
+      car, selected, tripName, ticked, started: showChecklist,
+      startedAt: startedAt || (showChecklist ? new Date().toISOString() : null),
+    }));
+  }, [car, selected, tripName, ticked, showChecklist, startedAt]);
+
+  const clearTrip = () => {
+    localStorage.removeItem(TRIP_KEY);
+    setSelected([]); setTicked({}); setTripName(""); setShowChecklist(false);
+  };
+
+  const candidates = projects.filter((p) => !p.finished && !p.onHold && carsOf(p).includes(car));
   const toggle = (id) => setSelected(selected.includes(id) ? selected.filter((x) => x!==id) : [...selected, id]);
   const selectedProjects = projects.filter((p) => selected.includes(p.id));
-  const mergedChecklist = []; const seen = new Set();
-  selectedProjects.forEach((p) => (p.checklist||[]).forEach((item) => { if (!seen.has(item.label)) { seen.add(item.label); mergedChecklist.push({ ...item, id: Date.now() + Math.random() }); } }));
-  const totalItems = selectedProjects.reduce((s, p) => s + p.locations.reduce((ls, l) => ls + l.workItems.length, 0), 0);
+
+  // merge checklists, remembering which projects need each item
+  const mergedMap = new Map();
+  selectedProjects.forEach((p) => (p.checklist||[]).forEach((item) => {
+    if (item.done) return;
+    const key = item.label;
+    if (!mergedMap.has(key)) mergedMap.set(key, { label:key, from:[] });
+    mergedMap.get(key).from.push(p.name);
+  }));
+  const merged = [...mergedMap.values()];
+  const tickedCount = merged.filter((m) => ticked[m.label]).length;
+
+  const towns = [...new Set(selectedProjects.map((p) => p.subRegion).filter(Boolean))];
+
   return (
     <div style={{ background:"#161616", border:"1px solid #2a2a2a", borderRadius:10, marginBottom:16, overflow:"hidden" }}>
       <div style={{ padding:"14px 16px", borderBottom:"1px solid #1a1a1a", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <div style={{ fontWeight:700, fontSize:15 }}>🗺 Ferðir</div>
-        <button onClick={onClose} style={{ background:"none", border:"none", color:"#555", fontSize:18, cursor:"pointer" }}>×</button>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          {(selected.length > 0 || showChecklist) && (
+            <button onClick={() => { if (window.confirm("Hreinsa ferðina?")) clearTrip(); }} style={{ background:"none", border:"none", color:"#555", fontSize:11, cursor:"pointer" }}>Hreinsa ferð</button>
+          )}
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#555", fontSize:18, cursor:"pointer" }}>×</button>
+        </div>
       </div>
       <div style={{ padding:"14px 16px" }}>
         {!showChecklist ? (
           <div>
-            <div style={{ marginBottom:10 }}><label style={labelStyle}>Heiti ferðar (valkvæmt)</label><input type="text" value={tripName} onChange={(e) => setTripName(e.target.value)} placeholder="t.d. Mánudagsferð" style={inputStyle} /></div>
-            <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:8 }}>Veldu verkefni</div>
-            {projects.filter((p) => !p.finished).map((p) => (
-              <div key={p.id} onClick={() => toggle(p.id)} style={{ display:"flex", alignItems:"center", gap:10, background:selected.includes(p.id)?"#0f1a0f":"#111", border:`1px solid ${selected.includes(p.id)?"#1e3a1e":"#222"}`, borderRadius:8, padding:"10px 12px", marginBottom:6, cursor:"pointer" }}>
-                <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${selected.includes(p.id)?"#4a9a4a":"#444"}`, background:selected.includes(p.id)?"#1a4a1a":"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>{selected.includes(p.id) && <span style={{ color:"#4a9a4a", fontSize:12 }}>✓</span>}</div>
-                <div><div style={{ color:"#e0e0e0", fontSize:13, fontWeight:600 }}>{p.name}</div><div style={{ color:"#555", fontSize:11 }}>{p.region}{p.subRegion?" > "+p.subRegion:""} · {(p.checklist||[]).length} atriði</div></div>
+            <div style={{ marginBottom:12 }}>
+              <label style={labelStyle}>Bíll</label>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                {savedCars.filter((x) => x !== "Óúthlutað").map((cName) => {
+                  const on = car === cName;
+                  return (
+                    <button key={cName} onClick={() => { setCar(cName); setSelected([]); }}
+                      style={{ display:"inline-flex", alignItems:"center", gap:5, background:on?"#1a2a3a":"#111", color:on?"#6aacf0":"#666", border:`1px solid ${on?"#2a4a6a":"#333"}`, borderRadius:16, padding:"6px 12px", fontSize:12, fontWeight:on?700:400, cursor:"pointer" }}>
+                      <span style={{ fontSize:9, opacity:on?1:0.5 }}>{(VEHICLE_ICONS[cName]||{}).dot || "🚗"}</span>{cName}
+                    </button>
+                  );
+                })}
               </div>
-            ))}
-            {selected.length > 0 && <button onClick={() => setShowChecklist(true)} style={{ ...btnPrimary, width:"100%", marginTop:8, padding:"10px" }}>Sýna sameinaðan lista ({mergedChecklist.length}) →</button>}
+            </div>
+            <div style={{ marginBottom:10 }}><label style={labelStyle}>Heiti ferðar (valkvæmt)</label><input type="text" value={tripName} onChange={(e) => setTripName(e.target.value)} placeholder="t.d. Mánudagsferð" style={inputStyle} /></div>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+              <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5 }}>Veldu verkefni</div>
+              {candidates.length > 0 && (
+                <button onClick={() => setSelected(selected.length === candidates.length ? [] : candidates.map((p) => p.id))} style={{ background:"none", border:"none", color:"#555", fontSize:11, cursor:"pointer" }}>
+                  {selected.length === candidates.length ? "Hreinsa" : "Velja allt"}
+                </button>
+              )}
+            </div>
+            {candidates.length === 0 && <div style={{ color:"#444", fontSize:13, padding:"14px 0" }}>Engin virk verkefni á {car}</div>}
+            {candidates.map((p) => {
+              const on = selected.includes(p.id);
+              const todo = (p.checklist||[]).filter((i) => !i.done).length;
+              return (
+                <div key={p.id} onClick={() => toggle(p.id)} style={{ display:"flex", alignItems:"center", gap:10, background:on?"#0f1a0f":"#111", border:`1px solid ${on?"#1e3a1e":"#222"}`, borderRadius:8, padding:"10px 12px", marginBottom:6, cursor:"pointer" }}>
+                  <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${on?"#4a9a4a":"#444"}`, background:on?"#1a4a1a":"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>{on && <span style={{ color:"#4a9a4a", fontSize:12 }}>✓</span>}</div>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ color:"#e0e0e0", fontSize:13, fontWeight:600 }}>{p.name}</div>
+                    <div style={{ color:"#555", fontSize:11 }}>{p.subRegion || p.region}{todo>0?` · ${todo} á tékklista`:""}</div>
+                  </div>
+                </div>
+              );
+            })}
+            {selected.length > 0 && <button onClick={() => setShowChecklist(true)} style={{ ...btnPrimary, width:"100%", marginTop:8, padding:"10px" }}>Undirbúa ferð ({merged.length} atriði) →</button>}
           </div>
         ) : (
           <div>
-            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14 }}><button onClick={() => setShowChecklist(false)} style={{ background:"none", border:"none", color:"#888", fontSize:13, cursor:"pointer", padding:0 }}>← Til baka</button><div style={{ fontWeight:700, color:"#e0e0e0" }}>{tripName || "Ferð"}</div></div>
-            <div style={{ color:"#555", fontSize:12, marginBottom:10 }}>{selectedProjects.length} verkefni · {totalItems} skráningar · {mergedChecklist.length} atriði</div>
-            {mergedChecklist.map((item) => <div key={item.id} style={{ display:"flex", alignItems:"center", gap:10, background:"#111", border:"1px solid #222", borderRadius:7, padding:"9px 12px", marginBottom:6 }}><div style={{ width:18, height:18, borderRadius:4, border:"2px solid #444", flexShrink:0 }} /><span style={{ fontSize:13, color:"#ccc" }}>{item.label}</span></div>)}
-            {mergedChecklist.length === 0 && <div style={{ color:"#444", fontSize:13, textAlign:"center", padding:"20px 0" }}>Engin atriði á völdum verkefnum</div>}
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+              <button onClick={() => setShowChecklist(false)} style={{ background:"none", border:"none", color:"#888", fontSize:13, cursor:"pointer", padding:0 }}>← Til baka</button>
+              <div style={{ fontWeight:700, color:"#e0e0e0" }}>{tripName || "Ferð"} · {car}</div>
+            </div>
+            {startedAt && (
+              <div style={{ background:"#1a2a1a", border:"1px solid #2a4a2a", borderRadius:6, padding:"7px 10px", marginBottom:10, color:"#4a9a4a", fontSize:12 }}>
+                ↩ Ferð í gangi · hafin {new Date(startedAt).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}
+              </div>
+            )}
+            {towns.length > 0 && <div style={{ color:"#555", fontSize:12, marginBottom:12 }}>📍 {towns.join(" → ")}</div>}
+
+            <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:8 }}>
+              Taka með {merged.length>0 && `· ${tickedCount}/${merged.length}`}
+            </div>
+            {merged.map((m) => {
+              const on = !!ticked[m.label];
+              return (
+                <div key={m.label} onClick={() => setTicked({ ...ticked, [m.label]: !on })} style={{ display:"flex", alignItems:"center", gap:10, background:on?"#0f1a0f":"#111", border:`1px solid ${on?"#1e3a1e":"#222"}`, borderRadius:7, padding:"9px 12px", marginBottom:6, cursor:"pointer" }}>
+                  <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${on?"#4a9a4a":"#444"}`, background:on?"#1a4a1a":"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>{on && <span style={{ color:"#4a9a4a", fontSize:12 }}>✓</span>}</div>
+                  <div style={{ minWidth:0 }}>
+                    <span style={{ fontSize:13, color:on?"#4a7a4a":"#ccc", textDecoration:on?"line-through":"none" }}>{m.label}</span>
+                    {m.from.length > 1 && <div style={{ color:"#444", fontSize:10 }}>{m.from.length} verkefni</div>}
+                  </div>
+                </div>
+              );
+            })}
+            {merged.length === 0 && <div style={{ color:"#444", fontSize:13, padding:"10px 0" }}>Ekkert á tékklista valinna verkefna</div>}
+
+            <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, margin:"16px 0 8px" }}>Verkefni ferðar</div>
+            {selectedProjects.map((p) => (
+              <div key={p.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, background:"#111", border:"1px solid #222", borderRadius:7, padding:"9px 12px", marginBottom:6 }}>
+                <div style={{ minWidth:0 }}>
+                  <div style={{ fontSize:13, color:"#ccc", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.name}</div>
+                  <div style={{ color:"#555", fontSize:11 }}>{p.subRegion || p.region}</div>
+                </div>
+                <button onClick={() => onStartWork(p.id)} style={{ background:"#1a2a3a", color:"#6aacf0", border:"1px solid #2a4a6a", borderRadius:6, padding:"6px 12px", fontSize:12, fontWeight:700, cursor:"pointer", flexShrink:0 }}>▶ Byrja</button>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -810,7 +928,7 @@ function WorkMode({ project, onUpdate, onExit }) {
           <button onClick={onExit} style={{ background:"none", border:"1px solid #333", borderRadius:8, color:"#888", fontSize:13, padding:"6px 12px", cursor:"pointer", flexShrink:0 }}>← Til baka</button>
           <div style={{ minWidth:0 }}>
             <div style={{ fontWeight:800, fontSize:16, letterSpacing:-0.3, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{project.name}</div>
-            <div style={{ color:"#444", fontSize:11 }}>Í vinnslu · {project.assignedTo||"Óúthlutað"}</div>
+            <div style={{ color:"#444", fontSize:11 }}>Í vinnslu · {carsLabel(project)}</div>
           </div>
           {!project.finished && (
             <button onClick={() => onUpdate({ ...project, finished:true })} style={{ background:"#1a3a1a", color:"#4a9a4a", border:"1px solid #2a5a2a", borderRadius:6, padding:"6px 12px", fontSize:12, cursor:"pointer", marginLeft:"auto", flexShrink:0 }}>✓ Lokið</button>
@@ -859,10 +977,10 @@ function EditProjectForm({ project, onSave, onCancel }) {
   const [name, setName] = useState(project.name);
   const [region, setRegion] = useState(project.region || savedRegions[0]);
   const [subRegion, setSubRegion] = useState(project.subRegion || "");
-  const [assignedTo, setAssignedTo] = useState(project.assignedTo || "");
+  const [assignedCars, setAssignedCars] = useState(carsOf(project));
   const [client, setClient] = useState(project.client || "");
   const [projectType, setProjectType] = useState(project.projectType || "seasonal");
-  const save = () => { if (!name.trim()) return; onSave({ ...project, name:name.trim(), region, subRegion, assignedTo, client:client.trim(), projectType }); };
+  const save = () => { if (!name.trim()) return; onSave({ ...project, name:name.trim(), region, subRegion, assignedCars, assignedTo:undefined, client:client.trim(), projectType }); };
   return (
     <div style={{ background:"#1a1a1a", border:"1px solid #333", borderRadius:8, padding:14, marginBottom:12 }}>
       <div style={{ fontWeight:600, color:"#e0e0e0", fontSize:13, marginBottom:12 }}>Breyta verkefni</div>
@@ -876,7 +994,18 @@ function EditProjectForm({ project, onSave, onCancel }) {
         </div>
       )}
       <div style={{ marginBottom:10 }}><label style={labelStyle}>Úthlutað á</label>
-        <select value={assignedTo} onChange={(e)=>setAssignedTo(e.target.value)} style={selectStyle}><option value="">Óúthlutað</option>{savedCars.map((c)=><option key={c}>{c}</option>)}</select>
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+          {savedCars.filter((x) => x !== "Óúthlutað").map((cName) => {
+            const on = assignedCars.includes(cName);
+            return (
+              <button key={cName} onClick={() => setAssignedCars(on ? assignedCars.filter((x) => x !== cName) : [...assignedCars, cName])}
+                style={{ display:"inline-flex", alignItems:"center", gap:5, background:on?"#1a2a3a":"#111", color:on?"#6aacf0":"#666", border:`1px solid ${on?"#2a4a6a":"#333"}`, borderRadius:16, padding:"6px 12px", fontSize:12, fontWeight:on?700:400, cursor:"pointer" }}>
+                <span style={{ fontSize:9, opacity:on?1:0.5 }}>{(VEHICLE_ICONS[cName]||{}).dot || "🚗"}</span>{cName}
+              </button>
+            );
+          })}
+        </div>
+        {assignedCars.length === 0 && <div style={{ color:"#444", fontSize:11, marginTop:5 }}>Óúthlutað</div>}
       </div>
       <div style={{ marginBottom:10 }}><label style={labelStyle}>Viðskiptavinur</label>
         <input type="text" value={client} onChange={(e)=>setClient(e.target.value)} placeholder="t.d. Krónan" style={inputStyle} list="rml-clients" />
@@ -927,12 +1056,12 @@ function ProjectCard({ project, onUpdate, onDelete, onStartWork, onMoveUp, onMov
           </div>
           {collapsed ? (
             <div style={{ color:"#444", fontSize:11, marginTop:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-              {project.assignedTo && <span>{project.assignedTo} · </span>}<span>{totalItems} stk</span>{locSummary && <span> · {locSummary}</span>}
+              {carsOf(project).length>0 && <span>{carsOf(project).join(" · ")} · </span>}<span>{totalItems} stk</span>{locSummary && <span> · {locSummary}</span>}
             </div>
           ) : (
             <div style={{ color:"#555", fontSize:12, marginTop:2 }}>
               {project.region}{project.subRegion?" > "+project.subRegion:""}
-              {project.assignedTo?" · "+project.assignedTo:""}
+              {carsOf(project).length?" · "+carsOf(project).join(" · "):""}
               {" · "}{totalItems} skráning{totalItems!==1?"ar":""}
               {contactCount>0?" · "+contactCount+" tengiliðir":""}
               {checklist.length>0?` · ${checkDone}/${checklist.length}`:""}
@@ -995,13 +1124,13 @@ function NewProjectForm({ onAdd, onCancel }) {
   const [name, setName] = useState("");
   const [region, setRegion] = useState(savedRegions[0]);
   const [subRegion, setSubRegion] = useState("");
-  const [assignedTo, setAssignedTo] = useState("");
+  const [assignedCars, setAssignedCars] = useState([]);
   const [client, setClient] = useState("");
   const [notes, setNotes] = useState("");
   const [projectType, setProjectType] = useState("seasonal");
   const handleAdd = () => {
     if (!name.trim()) return;
-    onAdd({ id:Date.now(), name:name.trim(), region, subRegion, assignedTo, client:client.trim(), notes, finished:false, onHold:false, drawings:[], locations:[], contacts:[], checklist:[], projectType });
+    onAdd({ id:Date.now(), name:name.trim(), region, subRegion, assignedCars, client:client.trim(), notes, finished:false, onHold:false, drawings:[], locations:[], contacts:[], checklist:[], projectType });
   };
   return (
     <div style={{ background:"#161616", border:"1px solid #333", borderRadius:10, padding:16, marginBottom:16 }}>
@@ -1016,7 +1145,18 @@ function NewProjectForm({ onAdd, onCancel }) {
         </div>
       )}
       <div style={{ marginBottom:10 }}><label style={labelStyle}>Úthlutað á</label>
-        <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} style={selectStyle}><option value="">Óúthlutað</option>{savedCars.map((c) => <option key={c}>{c}</option>)}</select>
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+          {savedCars.filter((x) => x !== "Óúthlutað").map((cName) => {
+            const on = assignedCars.includes(cName);
+            return (
+              <button key={cName} onClick={() => setAssignedCars(on ? assignedCars.filter((x) => x !== cName) : [...assignedCars, cName])}
+                style={{ display:"inline-flex", alignItems:"center", gap:5, background:on?"#1a2a3a":"#111", color:on?"#6aacf0":"#666", border:`1px solid ${on?"#2a4a6a":"#333"}`, borderRadius:16, padding:"6px 12px", fontSize:12, fontWeight:on?700:400, cursor:"pointer" }}>
+                <span style={{ fontSize:9, opacity:on?1:0.5 }}>{(VEHICLE_ICONS[cName]||{}).dot || "🚗"}</span>{cName}
+              </button>
+            );
+          })}
+        </div>
+        {assignedCars.length === 0 && <div style={{ color:"#444", fontSize:11, marginTop:5 }}>Óúthlutað</div>}
       </div>
       <div style={{ marginBottom:10 }}><label style={labelStyle}>Viðskiptavinur (valkvæmt)</label>
         <input type="text" value={client} onChange={(e) => setClient(e.target.value)} placeholder="t.d. Krónan" style={inputStyle} list="rml-clients" />
@@ -1091,6 +1231,7 @@ export default function App() {
   const [groupBy, setGroupBy] = useState(() => localStorage.getItem("rml_groupby") || "subRegion");
   const [openGroups, setOpenGroups] = useState(() => { try { return JSON.parse(localStorage.getItem("rml_opengroups")) || {}; } catch { return {}; } });
   const [showNewSeason, setShowNewSeason] = useState(false);
+  const [tripBadge, setTripBadge] = useState(() => { const t = loadTrip(); return t?.selected?.length || 0; });
 
   useEffect(() => {
     if (!authed) return;
@@ -1139,7 +1280,7 @@ export default function App() {
     const matchesFilter = filter==="all"||(filter==="active"&&!p.finished&&!p.onHold)||(filter==="onhold"&&p.onHold&&!p.finished)||(filter==="finished"&&p.finished);
     const q = search.toLowerCase();
     const matchesSearch = !search||p.name.toLowerCase().includes(q)||(p.subRegion&&p.subRegion.toLowerCase().includes(q))||(p.client&&p.client.toLowerCase().includes(q));
-    const matchesCar = carFilter==="all"||p.assignedTo===carFilter;
+    const matchesCar = carFilter==="all"||carsOf(p).includes(carFilter);
     const matchesSeason = seasonFilter==="all"||(seasonFilter==="seasonal"&&p.projectType==="seasonal")||(seasonFilter==="oneoff"&&p.projectType==="oneoff");
     return matchesFilter && matchesSearch && matchesCar && matchesSeason;
   });
@@ -1159,9 +1300,13 @@ export default function App() {
   const grouped = (() => {
     const map = new Map();
     filtered.forEach((p) => {
-      const key = (p[groupBy] || "").trim() || NO_GROUP[groupBy];
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(p);
+      const keys = groupBy === "assignedTo"
+        ? (carsOf(p).length ? carsOf(p) : [NO_GROUP.assignedTo])
+        : [((p[groupBy] || "").trim() || NO_GROUP[groupBy])];
+      keys.forEach((key) => {
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(p);
+      });
     });
     return [...map.entries()].sort((a, b) => {
       const aNone = a[0] === NO_GROUP[groupBy], bNone = b[0] === NO_GROUP[groupBy];
@@ -1216,7 +1361,7 @@ export default function App() {
           ))}
         </div>
         <div style={{ display:"flex", gap:6, justifyContent:"flex-end", marginBottom:8 }}>
-          <button onClick={() => { setShowTrips(!showTrips); setShowHours(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showTrips?"#1a2a1a":"none", color:showTrips?"#4a9a4a":"#555", border:`1px solid ${showTrips?"#2a4a2a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>🗺 Ferðir</button>
+          <button onClick={() => { setShowTrips(!showTrips); setShowHours(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showTrips?"#1a2a1a":"none", color:showTrips?"#4a9a4a":"#555", border:`1px solid ${showTrips?"#2a4a2a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>🗺 Ferðir{tripBadge>0 && <span style={{ marginLeft:5, background:"#2a4a2a", color:"#4a9a4a", borderRadius:8, padding:"1px 6px", fontSize:10, fontWeight:700 }}>{tripBadge}</span>}</button>
           <button onClick={() => { setShowHours(!showHours); setShowTrips(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showHours?"#1a2a3a":"none", color:showHours?"#6aacf0":"#555", border:`1px solid ${showHours?"#2a4a6a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⏱ Vinnustundir</button>
           <button onClick={() => { setShowPrivate(!showPrivate); setShowHours(false); setShowTrips(false); setShowSettings(false); }} style={{ background:showPrivate?"#2a1a2a":"none", color:showPrivate?"#a06ac0":"#555", border:`1px solid ${showPrivate?"#4a2a5a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>🎒</button>
           <button onClick={() => { setShowSettings(!showSettings); setShowPrivate(false); setShowHours(false); setShowTrips(false); }} style={{ background:showSettings?"#2a2a1a":"none", color:showSettings?"#c0a040":"#555", border:`1px solid ${showSettings?"#5a4a10":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⚙️</button>
@@ -1227,7 +1372,9 @@ export default function App() {
         {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
         {showPrivate && <PrivateChecklist onClose={() => setShowPrivate(false)} />}
         {showHours && <HoursTracker onClose={() => setShowHours(false)} />}
-        {showTrips && <TripsView projects={projects} onClose={() => setShowTrips(false)} />}
+        {showTrips && <TripsView projects={projects} carFilter={carFilter}
+          onClose={() => { setShowTrips(false); const t = loadTrip(); setTripBadge(t?.selected?.length || 0); }}
+          onStartWork={(id) => { const t = loadTrip(); setTripBadge(t?.selected?.length || 0); localStorage.setItem("rml_workmode", String(id)); setWorkMode(String(id)); }} />}
         {showNew && <NewProjectForm onAdd={addProject} onCancel={() => setShowNew(false)} />}
         <datalist id="rml-clients">{allClients.map((cl) => <option key={cl} value={cl} />)}</datalist>
 
@@ -1254,7 +1401,7 @@ export default function App() {
               {isOpen && (
                 <div style={{ marginTop:8 }}>
                   {items.map((p, i) => (
-                    <ProjectCard key={p.id} project={p} onUpdate={updateProject} onDelete={deleteProject}
+                    <ProjectCard key={groupKey+"-"+p.id} project={p} onUpdate={updateProject} onDelete={deleteProject}
                       onStartWork={() => { const id = String(p.id); localStorage.setItem("rml_workmode", id); setWorkMode(id); }}
                       onMoveUp={() => moveProject(p.id, -1)}
                       onMoveDown={() => moveProject(p.id, 1)}
