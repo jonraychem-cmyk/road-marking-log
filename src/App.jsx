@@ -78,10 +78,13 @@ const DEFAULT_SUB_REGIONS = {
 const SUB_REGIONS = DEFAULT_SUB_REGIONS;
 const STENCIL_OPTIONS = ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkall","Hjólhýsi","Hjól","Annað"];
 const ZEBRA_SIZES = ["50x300","50x250","50x240","50x200","50x120","Sérsniðið"];
+const THERMO_MODES = ["Mössun","Fræsun"];
+const THERMO_KINDS = ["Línur","Gangbraut","Ör","Beygjuör"];
+const THERMO_THICKNESS = ["10cm","15cm","20cm","30cm"];
 const METER_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Miðlínur","Kantlínur","Gular línur","Gulur kantur","Skott","Formerking","Línur","Hvítar línur","Hvítar línur + formerking","Gul lína","Gular línur"];
 const PIECE_TYPES = ["Blár ferningur","Blár bakgrunnur","Grænn bakgrunnur","Grænn ferningur"];
 const STENCIL_NAMES = ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkall","Hjólhýsi","Hjól","Annað"];
-const DEFAULT_WORK_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Gular línur","Gulur kantur","Miðlínur","Kantlínur","Skott",...PIECE_TYPES,"Stencil","Gangbraut","Þríhyrningar","Ferningar 50x50","Formerking","Annað"];
+const DEFAULT_WORK_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Gular línur","Gulur kantur","Miðlínur","Kantlínur","Skott",...PIECE_TYPES,"Stencil","Gangbraut","Þríhyrningar","Ferningar 50x50","Formerking",...THERMO_MODES,"Annað"];
 const WORK_TYPES = DEFAULT_WORK_TYPES;
 try {
   const saved = JSON.parse(localStorage.getItem("rml_worktypes")||"null");
@@ -95,9 +98,11 @@ const VEHICLE_ICONS = {
 function VehicleBadge({ name, active }) {
   const v = VEHICLE_ICONS[name];
   return (
-    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, cursor:"pointer", width:"100%", background:active?"#1a2a3a":"none", border:`1px solid ${active?"#2a4a6a":"#222"}`, borderRadius:10, padding:"6px 4px" }}>
-      <span style={{ fontSize:18 }}>{v ? v.dot : "🚗"}</span>
-      <span style={{ fontSize:10, color:active?"#6aacf0":"#555", fontWeight:active?700:400, whiteSpace:"nowrap" }}>{name}</span>
+    <div style={{ display:"inline-flex", alignItems:"center", gap:5, cursor:"pointer",
+      background:active?"#1a2a3a":"none", border:`1px solid ${active?"#2a4a6a":"#222"}`,
+      borderRadius:16, padding:"5px 12px", whiteSpace:"nowrap" }}>
+      <span style={{ fontSize:9, opacity:active?1:0.5 }}>{v ? v.dot : "🚗"}</span>
+      <span style={{ fontSize:12, color:active?"#6aacf0":"#666", fontWeight:active?700:400 }}>{name}</span>
     </div>
   );
 }
@@ -323,6 +328,10 @@ function WorkItemForm({ onAdd, onCancel }) {
   const [zebraSize, setZebraSize] = useState("50x300");
   const [zebraCustom, setZebraCustom] = useState("");
   const [zebraQty, setZebraQty] = useState("");
+  const [thermoKind, setThermoKind] = useState(THERMO_KINDS[0]);
+  const [thermoThick, setThermoThick] = useState(THERMO_THICKNESS[1]);
+  const [thermoAmount, setThermoAmount] = useState("");
+  const [thermoZebra, setThermoZebra] = useState("50x300");
   const [otherDesc, setOtherDesc] = useState("");
   const [otherQty, setOtherQty] = useState("");
   const isMeter = METER_TYPES.includes(type);
@@ -330,6 +339,7 @@ function WorkItemForm({ onAdd, onCancel }) {
   const isStencil = type === "Stencil";
   const isGangbraut = type === "Gangbraut";
   const isTriangle = type === "Þríhyrningar" || type === "Ferningar 50x50";
+  const isThermo = THERMO_MODES.includes(type);
   const isOther = type === "Annað";
   const handleAdd = () => {
     let item = { type, id:Date.now() };
@@ -337,6 +347,22 @@ function WorkItemForm({ onAdd, onCancel }) {
     else if (isPiece) { if (!quantity) return; item.quantity=quantity; item.label=type+" x "+quantity; }
     else if (isStencil) { if (!quantity) return; const st = stencilType==="Annað"?stencilOther:stencilType; item.stencilType=st; item.quantity=quantity; item.label="Stencil - "+st+" x "+quantity; }
     else if (isGangbraut) { if (!zebraQty) return; const sz = zebraSize==="Sérsniðið"?zebraCustom:zebraSize; item.size=sz; item.quantity=zebraQty; item.label="Gangbraut "+sz+"cm x "+zebraQty; }
+    else if (isThermo) {
+      if (!thermoAmount) return;
+      item.thermoKind = thermoKind;
+      if (thermoKind === "Línur") {
+        item.thickness = thermoThick;
+        item.meters = thermoAmount;
+        item.label = type + " " + thermoKind + " " + thermoThick + ": " + thermoAmount + "m";
+      } else if (thermoKind === "Gangbraut") {
+        item.size = thermoZebra;
+        item.quantity = thermoAmount;
+        item.label = type + " Gangbraut " + thermoZebra + "cm x " + thermoAmount;
+      } else {
+        item.quantity = thermoAmount;
+        item.label = type + " " + thermoKind + " x " + thermoAmount;
+      }
+    }
     else if (isOther) { if (!otherDesc.trim()) return; item.description=otherDesc.trim(); item.quantity=otherQty; item.label=otherDesc.trim()+(otherQty?" x "+otherQty:""); }
     onAdd(item);
   };
@@ -355,6 +381,32 @@ function WorkItemForm({ onAdd, onCancel }) {
           <div style={{ marginBottom:10 }}><label style={labelStyle}>Fjöldi</label><input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="t.d. 4" style={inputStyle} /></div>
         </div>
       )}
+      {isThermo && (
+        <div>
+          <div style={{ marginBottom:10 }}><label style={labelStyle}>Tegund</label>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              {THERMO_KINDS.map((k) => (
+                <button key={k} onClick={() => { setThermoKind(k); setThermoAmount(""); }} style={{ flex:"1 1 auto", background:thermoKind===k?"#e8f0e8":"#111", color:thermoKind===k?"#111":"#666", border:`1px solid ${thermoKind===k?"#e8f0e8":"#333"}`, borderRadius:8, padding:"8px 10px", fontSize:13, fontWeight:thermoKind===k?700:400, cursor:"pointer" }}>{k}</button>
+              ))}
+            </div>
+          </div>
+          {thermoKind === "Línur" && (
+            <div style={{ marginBottom:10 }}><label style={labelStyle}>Breidd</label>
+              <select value={thermoThick} onChange={(e) => setThermoThick(e.target.value)} style={selectStyle}>{THERMO_THICKNESS.map((t) => <option key={t}>{t}</option>)}</select>
+            </div>
+          )}
+          {thermoKind === "Gangbraut" && (
+            <div style={{ marginBottom:10 }}><label style={labelStyle}>Stærð (cm)</label>
+              <select value={thermoZebra} onChange={(e) => setThermoZebra(e.target.value)} style={selectStyle}>{ZEBRA_SIZES.filter((s) => s !== "Sérsniðið").map((s) => <option key={s}>{s}</option>)}</select>
+            </div>
+          )}
+          <div style={{ marginBottom:10 }}>
+            <label style={labelStyle}>{thermoKind === "Línur" ? "Metrar" : "Fjöldi"}</label>
+            <input type="number" value={thermoAmount} onChange={(e) => setThermoAmount(e.target.value)} placeholder={thermoKind === "Línur" ? "t.d. 240" : "t.d. 4"} style={inputStyle} />
+          </div>
+        </div>
+      )}
+
       {isOther && (
         <div>
           <div style={{ marginBottom:10 }}><label style={labelStyle}>Lýsing</label><input type="text" value={otherDesc} onChange={(e) => setOtherDesc(e.target.value)} placeholder="t.d. Instavolt primark logo" style={inputStyle} /></div>
@@ -808,8 +860,9 @@ function EditProjectForm({ project, onSave, onCancel }) {
   const [region, setRegion] = useState(project.region || savedRegions[0]);
   const [subRegion, setSubRegion] = useState(project.subRegion || "");
   const [assignedTo, setAssignedTo] = useState(project.assignedTo || "");
+  const [client, setClient] = useState(project.client || "");
   const [projectType, setProjectType] = useState(project.projectType || "seasonal");
-  const save = () => { if (!name.trim()) return; onSave({ ...project, name:name.trim(), region, subRegion, assignedTo, projectType }); };
+  const save = () => { if (!name.trim()) return; onSave({ ...project, name:name.trim(), region, subRegion, assignedTo, client:client.trim(), projectType }); };
   return (
     <div style={{ background:"#1a1a1a", border:"1px solid #333", borderRadius:8, padding:14, marginBottom:12 }}>
       <div style={{ fontWeight:600, color:"#e0e0e0", fontSize:13, marginBottom:12 }}>Breyta verkefni</div>
@@ -824,6 +877,9 @@ function EditProjectForm({ project, onSave, onCancel }) {
       )}
       <div style={{ marginBottom:10 }}><label style={labelStyle}>Úthlutað á</label>
         <select value={assignedTo} onChange={(e)=>setAssignedTo(e.target.value)} style={selectStyle}><option value="">Óúthlutað</option>{savedCars.map((c)=><option key={c}>{c}</option>)}</select>
+      </div>
+      <div style={{ marginBottom:10 }}><label style={labelStyle}>Viðskiptavinur</label>
+        <input type="text" value={client} onChange={(e)=>setClient(e.target.value)} placeholder="t.d. Krónan" style={inputStyle} list="rml-clients" />
       </div>
       <div style={{ marginBottom:12 }}><label style={labelStyle}>Tegund verkefnis</label>
         <div style={{ display:"flex", gap:8 }}>
@@ -884,6 +940,7 @@ function ProjectCard({ project, onUpdate, onDelete, onStartWork, onMoveUp, onMov
           )}
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+          {project.onHold && !project.finished && <span style={{ background:"#2a2a10", color:"#c0a040", borderRadius:4, padding:"2px 6px", fontSize:11 }}>Í bið</span>}
           {project.finished && <span style={{ background:"#1a3a1a", color:"#4a9a4a", borderRadius:4, padding:"2px 6px", fontSize:11 }}>Lokið</span>}
           <button onClick={(e) => { e.stopPropagation(); setCollapsed(!collapsed); setExpanded(false); }} style={{ background:"none", border:"1px solid #2a2a2a", borderRadius:6, color:"#555", cursor:"pointer", fontSize:11, padding:"3px 8px" }}>{collapsed ? "▼ Opna" : "▲ Loka"}</button>
         </div>
@@ -921,6 +978,7 @@ function ProjectCard({ project, onUpdate, onDelete, onStartWork, onMoveUp, onMov
           )}
           <div style={{ display:"flex", gap:8, marginTop:14, paddingTop:14, borderTop:"1px solid #222" }}>
             <button onClick={() => onUpdate({ ...project, finished:!project.finished })} style={project.finished?btnSecondary:btnSuccess}>{project.finished?"Enduropna":"Merkja lokið"}</button>
+            <button onClick={() => onUpdate({ ...project, onHold:!project.onHold })} style={{ ...btnSecondary, color:project.onHold?"#c0a040":"#888", borderColor:project.onHold?"#5a4a10":"#333" }}>{project.onHold?"Taka úr bið":"Setja í bið"}</button>
             <button onClick={() => { if (window.confirm("Ertu viss um að þú viljir eyða þessu verkefni?")) onDelete(project.id); }} style={{ ...btnSecondary, color:"#7a3a3a" }}>Eyða</button>
           </div>
         </div>
@@ -938,11 +996,12 @@ function NewProjectForm({ onAdd, onCancel }) {
   const [region, setRegion] = useState(savedRegions[0]);
   const [subRegion, setSubRegion] = useState("");
   const [assignedTo, setAssignedTo] = useState("");
+  const [client, setClient] = useState("");
   const [notes, setNotes] = useState("");
   const [projectType, setProjectType] = useState("seasonal");
   const handleAdd = () => {
     if (!name.trim()) return;
-    onAdd({ id:Date.now(), name:name.trim(), region, subRegion, assignedTo, notes, finished:false, drawings:[], locations:[], contacts:[], checklist:[], projectType });
+    onAdd({ id:Date.now(), name:name.trim(), region, subRegion, assignedTo, client:client.trim(), notes, finished:false, onHold:false, drawings:[], locations:[], contacts:[], checklist:[], projectType });
   };
   return (
     <div style={{ background:"#161616", border:"1px solid #333", borderRadius:10, padding:16, marginBottom:16 }}>
@@ -958,6 +1017,9 @@ function NewProjectForm({ onAdd, onCancel }) {
       )}
       <div style={{ marginBottom:10 }}><label style={labelStyle}>Úthlutað á</label>
         <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} style={selectStyle}><option value="">Óúthlutað</option>{savedCars.map((c) => <option key={c}>{c}</option>)}</select>
+      </div>
+      <div style={{ marginBottom:10 }}><label style={labelStyle}>Viðskiptavinur (valkvæmt)</label>
+        <input type="text" value={client} onChange={(e) => setClient(e.target.value)} placeholder="t.d. Krónan" style={inputStyle} list="rml-clients" />
       </div>
       <div style={{ marginBottom:10 }}><label style={labelStyle}>Tegund verkefnis</label>
         <div style={{ display:"flex", gap:8 }}>
@@ -1026,6 +1088,8 @@ export default function App() {
   const [showPrivate, setShowPrivate] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [seasonFilter, setSeasonFilter] = useState("all");
+  const [groupBy, setGroupBy] = useState(() => localStorage.getItem("rml_groupby") || "subRegion");
+  const [openGroups, setOpenGroups] = useState(() => { try { return JSON.parse(localStorage.getItem("rml_opengroups")) || {}; } catch { return {}; } });
   const [showNewSeason, setShowNewSeason] = useState(false);
 
   useEffect(() => {
@@ -1072,12 +1136,41 @@ export default function App() {
   };
 
   const filtered = projects.filter((p) => {
-    const matchesFilter = filter==="all"||(filter==="active"&&!p.finished)||(filter==="finished"&&p.finished);
-    const matchesSearch = !search||p.name.toLowerCase().includes(search.toLowerCase())||(p.subRegion&&p.subRegion.toLowerCase().includes(search.toLowerCase()));
+    const matchesFilter = filter==="all"||(filter==="active"&&!p.finished&&!p.onHold)||(filter==="onhold"&&p.onHold&&!p.finished)||(filter==="finished"&&p.finished);
+    const q = search.toLowerCase();
+    const matchesSearch = !search||p.name.toLowerCase().includes(q)||(p.subRegion&&p.subRegion.toLowerCase().includes(q))||(p.client&&p.client.toLowerCase().includes(q));
     const matchesCar = carFilter==="all"||p.assignedTo===carFilter;
     const matchesSeason = seasonFilter==="all"||(seasonFilter==="seasonal"&&p.projectType==="seasonal")||(seasonFilter==="oneoff"&&p.projectType==="oneoff");
     return matchesFilter && matchesSearch && matchesCar && matchesSeason;
   });
+
+  const setGroupByPersist = (g) => { setGroupBy(g); localStorage.setItem("rml_groupby", g); };
+  const toggleGroup = (key) => {
+    setOpenGroups((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      localStorage.setItem("rml_opengroups", JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const GROUP_LABELS = { subRegion:"Bær", assignedTo:"Bíll", client:"Viðskiptavinur" };
+  const NO_GROUP = { subRegion:"Án bæjar", assignedTo:"Óúthlutað", client:"Án viðskiptavinar" };
+
+  const grouped = (() => {
+    const map = new Map();
+    filtered.forEach((p) => {
+      const key = (p[groupBy] || "").trim() || NO_GROUP[groupBy];
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(p);
+    });
+    return [...map.entries()].sort((a, b) => {
+      const aNone = a[0] === NO_GROUP[groupBy], bNone = b[0] === NO_GROUP[groupBy];
+      if (aNone !== bNone) return aNone ? 1 : -1;
+      return a[0].localeCompare(b[0], "is");
+    });
+  })();
+
+  const allClients = [...new Set(projects.map((p) => (p.client||"").trim()).filter(Boolean))].sort();
 
   const workProject = workMode ? projects.find((p) => String(p.id)===String(workMode)) : null;
 
@@ -1108,19 +1201,18 @@ export default function App() {
         </div>
         <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Leita að verkefnum…" style={{ ...inputStyle, marginBottom:10 }} />
         <div style={{ display:"flex", gap:6, marginBottom:8 }}>
-          {["active","finished","all"].map((f) => (
-            <button key={f} onClick={() => setFilter(f)} style={{ background:filter===f?"#e8f0e8":"none", color:filter===f?"#111":"#666", border:filter===f?"none":"1px solid #222", borderRadius:16, padding:"5px 14px", fontSize:12, cursor:"pointer", fontWeight:filter===f?700:400 }}>
-              {f==="active"?"Virk":f==="finished"?"Lokið":"Öll"}
+          {["active","onhold","finished","all"].map((f) => (
+            <button key={f} onClick={() => setFilter(f)} style={{ background:filter===f?"#e8f0e8":"none", color:filter===f?"#111":"#666", border:filter===f?"none":"1px solid #222", borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:filter===f?700:400 }}>
+              {f==="active"?"Virk":f==="onhold"?"Í bið":f==="finished"?"Lokið":"Öll"}
             </button>
           ))}
         </div>
-        <div style={{ display:"flex", gap:6, marginBottom:8, paddingBottom:2 }}>
-          <div onClick={() => setCarFilter("all")} style={{ cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, flex:1, background:carFilter==="all"?"#1a2a3a":"none", border:`1px solid ${carFilter==="all"?"#2a4a6a":"#222"}`, borderRadius:10, padding:"6px 4px" }}>
-            <span style={{ fontSize:18 }}>🚗</span>
-            <span style={{ fontSize:10, color:carFilter==="all"?"#6aacf0":"#555", fontWeight:carFilter==="all"?700:400 }}>Allir</span>
+        <div style={{ display:"flex", gap:6, marginBottom:8, flexWrap:"wrap" }}>
+          <div onClick={() => setCarFilter("all")} style={{ cursor:"pointer", display:"inline-flex", alignItems:"center", background:carFilter==="all"?"#1a2a3a":"none", border:`1px solid ${carFilter==="all"?"#2a4a6a":"#222"}`, borderRadius:16, padding:"5px 12px" }}>
+            <span style={{ fontSize:12, color:carFilter==="all"?"#6aacf0":"#666", fontWeight:carFilter==="all"?700:400 }}>Allir</span>
           </div>
           {(JSON.parse(localStorage.getItem("rml_cars")||"null")||DEFAULT_CARS).filter(c=>c!=="Óúthlutað").map((c) => (
-            <div key={c} onClick={() => setCarFilter(c)} style={{ flex:1 }}><VehicleBadge name={c} active={carFilter===c} /></div>
+            <div key={c} onClick={() => setCarFilter(c)}><VehicleBadge name={c} active={carFilter===c} /></div>
           ))}
         </div>
         <div style={{ display:"flex", gap:6, justifyContent:"flex-end", marginBottom:8 }}>
@@ -1128,13 +1220,6 @@ export default function App() {
           <button onClick={() => { setShowHours(!showHours); setShowTrips(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showHours?"#1a2a3a":"none", color:showHours?"#6aacf0":"#555", border:`1px solid ${showHours?"#2a4a6a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⏱ Vinnustundir</button>
           <button onClick={() => { setShowPrivate(!showPrivate); setShowHours(false); setShowTrips(false); setShowSettings(false); }} style={{ background:showPrivate?"#2a1a2a":"none", color:showPrivate?"#a06ac0":"#555", border:`1px solid ${showPrivate?"#4a2a5a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>🎒</button>
           <button onClick={() => { setShowSettings(!showSettings); setShowPrivate(false); setShowHours(false); setShowTrips(false); }} style={{ background:showSettings?"#2a2a1a":"none", color:showSettings?"#c0a040":"#555", border:`1px solid ${showSettings?"#5a4a10":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⚙️</button>
-        </div>
-        <div style={{ display:"flex", gap:6 }}>
-          {[{val:"all",label:"Öll"},{val:"seasonal",label:"🔄 Árleg"},{val:"oneoff",label:"1️⃣ Einstök"}].map((f) => (
-            <button key={f.val} onClick={() => setSeasonFilter(f.val)} style={{ background:seasonFilter===f.val?"#e8f0e8":"none", color:seasonFilter===f.val?"#111":"#666", border:seasonFilter===f.val?"none":"1px solid #222", borderRadius:16, padding:"5px 10px", fontSize:11, cursor:"pointer", fontWeight:seasonFilter===f.val?700:400 }}>{f.label}</button>
-          ))}
-          <button onClick={backupProjects} style={{ marginLeft:"auto", background:"none", border:"1px solid #222", borderRadius:16, padding:"5px 10px", fontSize:11, color:"#555", cursor:"pointer" }}>💾</button>
-          <button onClick={() => setShowNewSeason(true)} style={{ background:"#1a2a1a", border:"1px solid #2a4a2a", borderRadius:16, padding:"5px 10px", fontSize:11, color:"#4a9a4a", cursor:"pointer" }}>🔄 Nýtt tímabil</button>
         </div>
       </div>
 
@@ -1144,19 +1229,57 @@ export default function App() {
         {showHours && <HoursTracker onClose={() => setShowHours(false)} />}
         {showTrips && <TripsView projects={projects} onClose={() => setShowTrips(false)} />}
         {showNew && <NewProjectForm onAdd={addProject} onCancel={() => setShowNew(false)} />}
+        <datalist id="rml-clients">{allClients.map((cl) => <option key={cl} value={cl} />)}</datalist>
+
         {filtered.length===0 && (
           <div style={{ textAlign:"center", color:"#444", padding:"40px 20px", fontSize:14 }}>
             {search ? "Engin verkefni passa við leitina" : "Engin verkefni hér ennþá"}
           </div>
         )}
-        {filtered.map((p, i) => (
-          <ProjectCard key={p.id} project={p} onUpdate={updateProject} onDelete={deleteProject}
-            onStartWork={() => { const id = String(p.id); localStorage.setItem("rml_workmode", id); setWorkMode(id); }}
-            onMoveUp={() => moveProject(p.id, -1)}
-            onMoveDown={() => moveProject(p.id, 1)}
-            isFirst={i===0} isLast={i===filtered.length-1}
-          />
-        ))}
+
+        {filtered.length > 0 && grouped.map(([groupKey, items]) => {
+          const isOpen = !!openGroups[groupKey] || !!search;
+          const activeCount = items.filter((p) => !p.finished && !p.onHold).length;
+          return (
+            <div key={groupKey} style={{ marginBottom:10 }}>
+              <div onClick={() => toggleGroup(groupKey)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", background:"#131313", border:"1px solid #222", borderRadius:8, padding:"11px 13px", cursor:"pointer" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, minWidth:0 }}>
+                  <span style={{ color:"#555", fontSize:12 }}>{isOpen ? "▾" : "▸"}</span>
+                  <span style={{ fontWeight:700, fontSize:14, color:"#e0e0e0", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{groupKey}</span>
+                </div>
+                <span style={{ color:"#555", fontSize:11, flexShrink:0 }}>
+                  {items.length} verkefni{activeCount>0 && activeCount!==items.length ? ` · ${activeCount} virk` : ""}
+                </span>
+              </div>
+              {isOpen && (
+                <div style={{ marginTop:8 }}>
+                  {items.map((p, i) => (
+                    <ProjectCard key={p.id} project={p} onUpdate={updateProject} onDelete={deleteProject}
+                      onStartWork={() => { const id = String(p.id); localStorage.setItem("rml_workmode", id); setWorkMode(id); }}
+                      onMoveUp={() => moveProject(p.id, -1)}
+                      onMoveDown={() => moveProject(p.id, 1)}
+                      isFirst={i===0} isLast={i===items.length-1}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div style={{ display:"flex", gap:6, alignItems:"center", marginTop:20, paddingTop:16, borderTop:"1px solid #1a1a1a", flexWrap:"wrap" }}>
+          <span style={{ color:"#444", fontSize:11, marginRight:2 }}>Flokka eftir:</span>
+          {["subRegion","assignedTo","client"].map((g) => (
+            <button key={g} onClick={() => setGroupByPersist(g)} style={{ background:groupBy===g?"#1a2a3a":"none", color:groupBy===g?"#6aacf0":"#666", border:`1px solid ${groupBy===g?"#2a4a6a":"#222"}`, borderRadius:16, padding:"5px 10px", fontSize:11, cursor:"pointer", fontWeight:groupBy===g?700:400 }}>{GROUP_LABELS[g]}</button>
+          ))}
+        </div>
+        <div style={{ display:"flex", gap:6, marginTop:10, flexWrap:"wrap" }}>
+          {[{val:"all",label:"Öll"},{val:"seasonal",label:"🔄 Árleg"},{val:"oneoff",label:"1️⃣ Einstök"}].map((f) => (
+            <button key={f.val} onClick={() => setSeasonFilter(f.val)} style={{ background:seasonFilter===f.val?"#e8f0e8":"none", color:seasonFilter===f.val?"#111":"#666", border:seasonFilter===f.val?"none":"1px solid #222", borderRadius:16, padding:"5px 10px", fontSize:11, cursor:"pointer", fontWeight:seasonFilter===f.val?700:400 }}>{f.label}</button>
+          ))}
+          <button onClick={backupProjects} style={{ marginLeft:"auto", background:"none", border:"1px solid #222", borderRadius:16, padding:"5px 10px", fontSize:11, color:"#555", cursor:"pointer" }}>💾 Backup</button>
+          <button onClick={() => setShowNewSeason(true)} style={{ background:"#1a2a1a", border:"1px solid #2a4a2a", borderRadius:16, padding:"5px 10px", fontSize:11, color:"#4a9a4a", cursor:"pointer" }}>🔄 Nýtt tímabil</button>
+        </div>
       </div>
     </div>
   );
