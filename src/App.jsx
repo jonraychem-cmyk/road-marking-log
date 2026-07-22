@@ -761,128 +761,181 @@ function PrivateChecklist({ onClose }) {
 }
 
 // ── Trips ─────────────────────────────────────────────────────────────────────
-const TRIP_KEY = "rml_trip";
-function loadTrip() {
-  try { return JSON.parse(localStorage.getItem(TRIP_KEY)) || null; } catch { return null; }
+const TRIP_KEY = "rml_trip";       // legacy single trip
+const LISTS_KEY = "rml_lists";     // { lists: [...], activeId }
+
+function loadLists() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LISTS_KEY));
+    if (raw && Array.isArray(raw.lists)) return raw;
+  } catch {}
+  // migrate a legacy single trip into the new shape
+  try {
+    const old = JSON.parse(localStorage.getItem(TRIP_KEY));
+    if (old && (old.selected||[]).length) {
+      const migrated = {
+        lists: [{
+          id: Date.now(), name: old.tripName || "Ferð", car: old.car || "",
+          selected: old.selected || [], ticked: old.ticked || {},
+          startedAt: old.startedAt || null, createdAt: new Date().toISOString(),
+        }],
+        activeId: null,
+      };
+      localStorage.setItem(LISTS_KEY, JSON.stringify(migrated));
+      localStorage.removeItem(TRIP_KEY);
+      return migrated;
+    }
+  } catch {}
+  return { lists: [], activeId: null };
 }
 
-function TripsView({ projects, carFilter, onClose, onStartWork }) {
+function saveLists(data) {
+  localStorage.setItem(LISTS_KEY, JSON.stringify(data));
+}
+
+// total open items across all lists, for the toolbar badge
+function listsBadgeCount() {
+  const { lists } = loadLists();
+  return lists.length;
+}
+
+function ListsView({ projects, carFilter, onClose, onStartWork, onChange }) {
   const savedCars = JSON.parse(localStorage.getItem("rml_cars")||"null") || DEFAULT_CARS;
-  const saved = loadTrip();
-  const [car, setCar] = useState(saved?.car || (carFilter && carFilter !== "all" ? carFilter : (savedCars.filter((x)=>x!=="Óúthlutað")[0] || "")));
-  const [selected, setSelected] = useState(saved?.selected || []);
-  const [tripName, setTripName] = useState(saved?.tripName || "");
-  const [showChecklist, setShowChecklist] = useState(!!saved?.started);
-  const [ticked, setTicked] = useState(saved?.ticked || {});
-  const [startedAt] = useState(saved?.startedAt || null);
+  const [store, setStore] = useState(() => loadLists());
+  const [openId, setOpenId] = useState(null);
+  const [newName, setNewName] = useState("");
 
-  // persist on every change
-  useEffect(() => {
-    if (!selected.length && !tripName && !Object.keys(ticked).length) {
-      localStorage.removeItem(TRIP_KEY);
-      return;
-    }
-    localStorage.setItem(TRIP_KEY, JSON.stringify({
-      car, selected, tripName, ticked, started: showChecklist,
-      startedAt: startedAt || (showChecklist ? new Date().toISOString() : null),
-    }));
-  }, [car, selected, tripName, ticked, showChecklist, startedAt]);
+  const persist = (next) => { setStore(next); saveLists(next); onChange && onChange(); };
 
-  const clearTrip = () => {
-    localStorage.removeItem(TRIP_KEY);
-    setSelected([]); setTicked({}); setTripName(""); setShowChecklist(false);
+  const lists = store.lists;
+  const current = lists.find((l) => l.id === openId) || null;
+
+  const updateList = (id, patch) => persist({ ...store, lists: lists.map((l) => l.id===id ? { ...l, ...patch } : l) });
+  const addList = () => {
+    if (!newName.trim()) return;
+    const list = { id:Date.now(), name:newName.trim(), car:"", selected:[], ticked:{}, startedAt:null, createdAt:new Date().toISOString() };
+    persist({ ...store, lists:[list, ...lists] });
+    setNewName(""); setOpenId(list.id);
   };
+  const removeList = (id) => { if (window.confirm("Eyða listanum?")) { persist({ ...store, lists:lists.filter((l) => l.id!==id) }); setOpenId(null); } };
 
-  const candidates = projects.filter((p) => !p.finished && !p.onHold && carsOf(p).includes(car));
-  const toggle = (id) => setSelected(selected.includes(id) ? selected.filter((x) => x!==id) : [...selected, id]);
-  const selectedProjects = projects.filter((p) => selected.includes(p.id));
+  const projById = (id) => projects.find((p) => p.id === id);
 
-  // merge checklists, remembering which projects need each item
+  // ---------- INDEX ----------
+  if (!current) {
+    return (
+      <div style={{ background:"#161616", border:"1px solid #2a2a2a", borderRadius:10, marginBottom:16, overflow:"hidden" }}>
+        <div style={{ padding:"14px 16px", borderBottom:"1px solid #1a1a1a", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div style={{ fontWeight:700, fontSize:15 }}>📋 Listar</div>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#555", fontSize:18, cursor:"pointer" }}>×</button>
+        </div>
+        <div style={{ padding:"14px 16px" }}>
+          <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+            <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key==="Enter" && addList()} placeholder="Nýr listi… t.d. Vestfirðir" style={{ ...inputStyle, flex:1, fontSize:13 }} />
+            <button onClick={addList} style={{ ...btnPrimary, padding:"8px 14px" }}>+</button>
+          </div>
+
+          {lists.length === 0 && <div style={{ color:"#444", fontSize:13, textAlign:"center", padding:"20px 0" }}>Engir listar ennþá</div>}
+
+          {lists.map((l) => {
+            const items = l.selected.map(projById).filter(Boolean);
+            const openCount = items.filter((p) => !p.finished).length;
+            const towns = [...new Set(items.map((p) => p.subRegion).filter(Boolean))];
+            const done = items.length > 0 && openCount === 0;
+            return (
+              <div key={l.id} onClick={() => setOpenId(l.id)} style={{ background:done?"#0f1a0f":"#111", border:`1px solid ${done?"#1e3a1e":"#222"}`, borderRadius:8, padding:"11px 13px", marginBottom:8, cursor:"pointer" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8 }}>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontWeight:700, fontSize:14, color:done?"#4a7a4a":"#e0e0e0", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                      {done && "✓ "}{l.name}
+                    </div>
+                    <div style={{ color:"#555", fontSize:11, marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                      {items.length} verkefni{openCount!==items.length ? ` · ${openCount} eftir` : ""}
+                      {l.car ? ` · ${l.car}` : ""}
+                      {towns.length ? ` · ${towns.join(", ")}` : ""}
+                    </div>
+                  </div>
+                  <span style={{ color:"#555", fontSize:14, flexShrink:0 }}>›</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ---------- DETAIL ----------
+  const items = current.selected.map(projById).filter(Boolean);
+  const towns = [...new Set(items.map((p) => p.subRegion).filter(Boolean))];
+  const candidates = projects.filter((p) => !p.finished && !p.onHold && (!current.car || carsOf(p).includes(current.car)));
+
   const mergedMap = new Map();
-  selectedProjects.forEach((p) => (p.checklist||[]).forEach((item) => {
+  items.forEach((p) => (p.checklist||[]).forEach((item) => {
     if (item.done) return;
-    const key = item.label;
-    if (!mergedMap.has(key)) mergedMap.set(key, { label:key, from:[] });
-    mergedMap.get(key).from.push(p.name);
+    if (!mergedMap.has(item.label)) mergedMap.set(item.label, { label:item.label, from:[] });
+    mergedMap.get(item.label).from.push(p.name);
   }));
   const merged = [...mergedMap.values()];
-  const tickedCount = merged.filter((m) => ticked[m.label]).length;
+  const tickedCount = merged.filter((m) => current.ticked[m.label]).length;
 
-  const towns = [...new Set(selectedProjects.map((p) => p.subRegion).filter(Boolean))];
+  const toggleProject = (id) => updateList(current.id, {
+    selected: current.selected.includes(id) ? current.selected.filter((x) => x!==id) : [...current.selected, id],
+  });
+  const toggleTick = (label) => updateList(current.id, { ticked: { ...current.ticked, [label]: !current.ticked[label] } });
 
   return (
     <div style={{ background:"#161616", border:"1px solid #2a2a2a", borderRadius:10, marginBottom:16, overflow:"hidden" }}>
-      <div style={{ padding:"14px 16px", borderBottom:"1px solid #1a1a1a", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div style={{ fontWeight:700, fontSize:15 }}>🗺 Ferðir</div>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          {(selected.length > 0 || showChecklist) && (
-            <button onClick={() => { if (window.confirm("Hreinsa ferðina?")) clearTrip(); }} style={{ background:"none", border:"none", color:"#555", fontSize:11, cursor:"pointer" }}>Hreinsa ferð</button>
-          )}
+      <div style={{ padding:"14px 16px", borderBottom:"1px solid #1a1a1a", display:"flex", justifyContent:"space-between", alignItems:"center", gap:8 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, minWidth:0 }}>
+          <button onClick={() => setOpenId(null)} style={{ background:"none", border:"none", color:"#888", fontSize:13, cursor:"pointer", padding:0, flexShrink:0 }}>←</button>
+          <input value={current.name} onChange={(e) => updateList(current.id, { name:e.target.value })}
+            style={{ background:"none", border:"none", color:"#e0e0e0", fontWeight:700, fontSize:15, outline:"none", minWidth:0, width:"100%" }} />
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
+          <button onClick={() => removeList(current.id)} style={{ background:"none", border:"none", color:"#5a2a2a", fontSize:14, cursor:"pointer" }}>🗑</button>
           <button onClick={onClose} style={{ background:"none", border:"none", color:"#555", fontSize:18, cursor:"pointer" }}>×</button>
         </div>
       </div>
+
       <div style={{ padding:"14px 16px" }}>
-        {!showChecklist ? (
-          <div>
-            <div style={{ marginBottom:12 }}>
-              <label style={labelStyle}>Bíll</label>
-              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                {savedCars.filter((x) => x !== "Óúthlutað").map((cName) => {
-                  const on = car === cName;
-                  return (
-                    <button key={cName} onClick={() => { setCar(cName); setSelected([]); }}
-                      style={{ display:"inline-flex", alignItems:"center", gap:5, background:on?"#1a2a3a":"#111", color:on?"#6aacf0":"#666", border:`1px solid ${on?"#2a4a6a":"#333"}`, borderRadius:16, padding:"6px 12px", fontSize:12, fontWeight:on?700:400, cursor:"pointer" }}>
-                      <span style={{ fontSize:9, opacity:on?1:0.5 }}>{(VEHICLE_ICONS[cName]||{}).dot || "🚗"}</span>{cName}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div style={{ marginBottom:10 }}><label style={labelStyle}>Heiti ferðar (valkvæmt)</label><input type="text" value={tripName} onChange={(e) => setTripName(e.target.value)} placeholder="t.d. Mánudagsferð" style={inputStyle} /></div>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
-              <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5 }}>Veldu verkefni</div>
-              {candidates.length > 0 && (
-                <button onClick={() => setSelected(selected.length === candidates.length ? [] : candidates.map((p) => p.id))} style={{ background:"none", border:"none", color:"#555", fontSize:11, cursor:"pointer" }}>
-                  {selected.length === candidates.length ? "Hreinsa" : "Velja allt"}
-                </button>
-              )}
-            </div>
-            {candidates.length === 0 && <div style={{ color:"#444", fontSize:13, padding:"14px 0" }}>Engin virk verkefni á {car}</div>}
-            {candidates.map((p) => {
-              const on = selected.includes(p.id);
-              const todo = (p.checklist||[]).filter((i) => !i.done).length;
+        {towns.length > 0 && <div style={{ color:"#555", fontSize:12, marginBottom:12 }}>📍 {towns.join(" → ")}</div>}
+
+        <div style={{ marginBottom:12 }}>
+          <label style={labelStyle}>Bíll (valkvæmt — síar listann)</label>
+          <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+            <button onClick={() => updateList(current.id, { car:"" })} style={{ background:!current.car?"#1a2a3a":"#111", color:!current.car?"#6aacf0":"#666", border:`1px solid ${!current.car?"#2a4a6a":"#333"}`, borderRadius:16, padding:"6px 12px", fontSize:12, fontWeight:!current.car?700:400, cursor:"pointer" }}>Allir</button>
+            {savedCars.filter((x) => x !== "Óúthlutað").map((cName) => {
+              const on = current.car === cName;
               return (
-                <div key={p.id} onClick={() => toggle(p.id)} style={{ display:"flex", alignItems:"center", gap:10, background:on?"#0f1a0f":"#111", border:`1px solid ${on?"#1e3a1e":"#222"}`, borderRadius:8, padding:"10px 12px", marginBottom:6, cursor:"pointer" }}>
-                  <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${on?"#4a9a4a":"#444"}`, background:on?"#1a4a1a":"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>{on && <span style={{ color:"#4a9a4a", fontSize:12 }}>✓</span>}</div>
-                  <div style={{ minWidth:0 }}>
-                    <div style={{ color:"#e0e0e0", fontSize:13, fontWeight:600 }}>{p.name}</div>
-                    <div style={{ color:"#555", fontSize:11 }}>{p.subRegion || p.region}{todo>0?` · ${todo} á tékklista`:""}</div>
-                  </div>
-                </div>
+                <button key={cName} onClick={() => updateList(current.id, { car:cName })}
+                  style={{ display:"inline-flex", alignItems:"center", gap:5, background:on?"#1a2a3a":"#111", color:on?"#6aacf0":"#666", border:`1px solid ${on?"#2a4a6a":"#333"}`, borderRadius:16, padding:"6px 12px", fontSize:12, fontWeight:on?700:400, cursor:"pointer" }}>
+                  <span style={{ fontSize:9, opacity:on?1:0.5 }}>{(VEHICLE_ICONS[cName]||{}).dot || "🚗"}</span>{cName}
+                </button>
               );
             })}
-            {selected.length > 0 && <button onClick={() => setShowChecklist(true)} style={{ ...btnPrimary, width:"100%", marginTop:8, padding:"10px" }}>Undirbúa ferð ({merged.length} atriði) →</button>}
           </div>
-        ) : (
-          <div>
-            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
-              <button onClick={() => setShowChecklist(false)} style={{ background:"none", border:"none", color:"#888", fontSize:13, cursor:"pointer", padding:0 }}>← Til baka</button>
-              <div style={{ fontWeight:700, color:"#e0e0e0" }}>{tripName || "Ferð"} · {car}</div>
-            </div>
-            {startedAt && (
-              <div style={{ background:"#1a2a1a", border:"1px solid #2a4a2a", borderRadius:6, padding:"7px 10px", marginBottom:10, color:"#4a9a4a", fontSize:12 }}>
-                ↩ Ferð í gangi · hafin {new Date(startedAt).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}
-              </div>
-            )}
-            {towns.length > 0 && <div style={{ color:"#555", fontSize:12, marginBottom:12 }}>📍 {towns.join(" → ")}</div>}
+        </div>
 
-            <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:8 }}>
-              Taka með {merged.length>0 && `· ${tickedCount}/${merged.length}`}
+        <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:8 }}>Verkefni í lista</div>
+        {items.length === 0 && <div style={{ color:"#444", fontSize:13, marginBottom:8 }}>Ekkert valið ennþá</div>}
+        {items.map((p) => (
+          <div key={p.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, background:p.finished?"#0f1a0f":"#111", border:`1px solid ${p.finished?"#1e3a1e":"#222"}`, borderRadius:7, padding:"9px 12px", marginBottom:6 }}>
+            <div style={{ minWidth:0 }}>
+              <div style={{ fontSize:13, color:p.finished?"#4a7a4a":"#ccc", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.finished && "✓ "}{p.name}</div>
+              <div style={{ color:"#555", fontSize:11 }}>{p.subRegion || p.region}</div>
             </div>
+            {!p.finished && <button onClick={() => onStartWork(p.id)} style={{ background:"#1a2a3a", color:"#6aacf0", border:"1px solid #2a4a6a", borderRadius:6, padding:"6px 12px", fontSize:12, fontWeight:700, cursor:"pointer", flexShrink:0 }}>▶ Byrja</button>}
+          </div>
+        ))}
+
+        {merged.length > 0 && (
+          <div style={{ marginTop:16 }}>
+            <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:8 }}>Taka með · {tickedCount}/{merged.length}</div>
             {merged.map((m) => {
-              const on = !!ticked[m.label];
+              const on = !!current.ticked[m.label];
               return (
-                <div key={m.label} onClick={() => setTicked({ ...ticked, [m.label]: !on })} style={{ display:"flex", alignItems:"center", gap:10, background:on?"#0f1a0f":"#111", border:`1px solid ${on?"#1e3a1e":"#222"}`, borderRadius:7, padding:"9px 12px", marginBottom:6, cursor:"pointer" }}>
+                <div key={m.label} onClick={() => toggleTick(m.label)} style={{ display:"flex", alignItems:"center", gap:10, background:on?"#0f1a0f":"#111", border:`1px solid ${on?"#1e3a1e":"#222"}`, borderRadius:7, padding:"9px 12px", marginBottom:6, cursor:"pointer" }}>
                   <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${on?"#4a9a4a":"#444"}`, background:on?"#1a4a1a":"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>{on && <span style={{ color:"#4a9a4a", fontSize:12 }}>✓</span>}</div>
                   <div style={{ minWidth:0 }}>
                     <span style={{ fontSize:13, color:on?"#4a7a4a":"#ccc", textDecoration:on?"line-through":"none" }}>{m.label}</span>
@@ -891,20 +944,25 @@ function TripsView({ projects, carFilter, onClose, onStartWork }) {
                 </div>
               );
             })}
-            {merged.length === 0 && <div style={{ color:"#444", fontSize:13, padding:"10px 0" }}>Ekkert á tékklista valinna verkefna</div>}
-
-            <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, margin:"16px 0 8px" }}>Verkefni ferðar</div>
-            {selectedProjects.map((p) => (
-              <div key={p.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, background:"#111", border:"1px solid #222", borderRadius:7, padding:"9px 12px", marginBottom:6 }}>
-                <div style={{ minWidth:0 }}>
-                  <div style={{ fontSize:13, color:"#ccc", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{p.name}</div>
-                  <div style={{ color:"#555", fontSize:11 }}>{p.subRegion || p.region}</div>
-                </div>
-                <button onClick={() => onStartWork(p.id)} style={{ background:"#1a2a3a", color:"#6aacf0", border:"1px solid #2a4a6a", borderRadius:6, padding:"6px 12px", fontSize:12, fontWeight:700, cursor:"pointer", flexShrink:0 }}>▶ Byrja</button>
-              </div>
-            ))}
           </div>
         )}
+
+        <div style={{ marginTop:16, paddingTop:14, borderTop:"1px solid #1a1a1a" }}>
+          <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:8 }}>Bæta við verkefnum</div>
+          {candidates.length === 0 && <div style={{ color:"#444", fontSize:13 }}>Engin virk verkefni{current.car ? ` á ${current.car}` : ""}</div>}
+          {candidates.map((p) => {
+            const on = current.selected.includes(p.id);
+            return (
+              <div key={p.id} onClick={() => toggleProject(p.id)} style={{ display:"flex", alignItems:"center", gap:10, background:on?"#0f1a0f":"#111", border:`1px solid ${on?"#1e3a1e":"#222"}`, borderRadius:8, padding:"9px 12px", marginBottom:6, cursor:"pointer" }}>
+                <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${on?"#4a9a4a":"#444"}`, background:on?"#1a4a1a":"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>{on && <span style={{ color:"#4a9a4a", fontSize:12 }}>✓</span>}</div>
+                <div style={{ minWidth:0 }}>
+                  <div style={{ color:"#e0e0e0", fontSize:13 }}>{p.name}</div>
+                  <div style={{ color:"#555", fontSize:11 }}>{p.subRegion || p.region}{carsOf(p).length ? " · " + carsOf(p).join(" · ") : ""}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -1224,14 +1282,14 @@ export default function App() {
   const [carFilter, setCarFilter] = useState("all");
   const [workMode, setWorkMode] = useState(() => localStorage.getItem("rml_workmode") || null);
   const [showHours, setShowHours] = useState(false);
-  const [showTrips, setShowTrips] = useState(false);
+  const [showLists, setShowLists] = useState(false);
   const [showPrivate, setShowPrivate] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [seasonFilter, setSeasonFilter] = useState("all");
   const [groupBy, setGroupBy] = useState(() => localStorage.getItem("rml_groupby") || "subRegion");
   const [openGroups, setOpenGroups] = useState(() => { try { return JSON.parse(localStorage.getItem("rml_opengroups")) || {}; } catch { return {}; } });
   const [showNewSeason, setShowNewSeason] = useState(false);
-  const [tripBadge, setTripBadge] = useState(() => { const t = loadTrip(); return t?.selected?.length || 0; });
+  const [listCount, setListCount] = useState(() => listsBadgeCount());
 
   useEffect(() => {
     if (!authed) return;
@@ -1361,10 +1419,10 @@ export default function App() {
           ))}
         </div>
         <div style={{ display:"flex", gap:6, justifyContent:"flex-end", marginBottom:8 }}>
-          <button onClick={() => { setShowTrips(!showTrips); setShowHours(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showTrips?"#1a2a1a":"none", color:showTrips?"#4a9a4a":"#555", border:`1px solid ${showTrips?"#2a4a2a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>🗺 Ferðir{tripBadge>0 && <span style={{ marginLeft:5, background:"#2a4a2a", color:"#4a9a4a", borderRadius:8, padding:"1px 6px", fontSize:10, fontWeight:700 }}>{tripBadge}</span>}</button>
-          <button onClick={() => { setShowHours(!showHours); setShowTrips(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showHours?"#1a2a3a":"none", color:showHours?"#6aacf0":"#555", border:`1px solid ${showHours?"#2a4a6a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⏱ Vinnustundir</button>
-          <button onClick={() => { setShowPrivate(!showPrivate); setShowHours(false); setShowTrips(false); setShowSettings(false); }} style={{ background:showPrivate?"#2a1a2a":"none", color:showPrivate?"#a06ac0":"#555", border:`1px solid ${showPrivate?"#4a2a5a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>🎒</button>
-          <button onClick={() => { setShowSettings(!showSettings); setShowPrivate(false); setShowHours(false); setShowTrips(false); }} style={{ background:showSettings?"#2a2a1a":"none", color:showSettings?"#c0a040":"#555", border:`1px solid ${showSettings?"#5a4a10":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⚙️</button>
+          <button onClick={() => { setShowLists(!showLists); setShowHours(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showLists?"#1a2a1a":"none", color:showLists?"#4a9a4a":"#555", border:`1px solid ${showLists?"#2a4a2a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>📋 Listar{listCount>0 && <span style={{ marginLeft:5, background:"#2a4a2a", color:"#4a9a4a", borderRadius:8, padding:"1px 6px", fontSize:10, fontWeight:700 }}>{listCount}</span>}</button>
+          <button onClick={() => { setShowHours(!showHours); setShowLists(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showHours?"#1a2a3a":"none", color:showHours?"#6aacf0":"#555", border:`1px solid ${showHours?"#2a4a6a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⏱ Vinnustundir</button>
+          <button onClick={() => { setShowPrivate(!showPrivate); setShowHours(false); setShowLists(false); setShowSettings(false); }} style={{ background:showPrivate?"#2a1a2a":"none", color:showPrivate?"#a06ac0":"#555", border:`1px solid ${showPrivate?"#4a2a5a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>🎒</button>
+          <button onClick={() => { setShowSettings(!showSettings); setShowPrivate(false); setShowHours(false); setShowLists(false); }} style={{ background:showSettings?"#2a2a1a":"none", color:showSettings?"#c0a040":"#555", border:`1px solid ${showSettings?"#5a4a10":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⚙️</button>
         </div>
       </div>
 
@@ -1372,9 +1430,10 @@ export default function App() {
         {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
         {showPrivate && <PrivateChecklist onClose={() => setShowPrivate(false)} />}
         {showHours && <HoursTracker onClose={() => setShowHours(false)} />}
-        {showTrips && <TripsView projects={projects} carFilter={carFilter}
-          onClose={() => { setShowTrips(false); const t = loadTrip(); setTripBadge(t?.selected?.length || 0); }}
-          onStartWork={(id) => { const t = loadTrip(); setTripBadge(t?.selected?.length || 0); localStorage.setItem("rml_workmode", String(id)); setWorkMode(String(id)); }} />}
+        {showLists && <ListsView projects={projects} carFilter={carFilter}
+          onChange={() => setListCount(listsBadgeCount())}
+          onClose={() => setShowLists(false)}
+          onStartWork={(id) => { localStorage.setItem("rml_workmode", String(id)); setWorkMode(String(id)); }} />}
         {showNew && <NewProjectForm onAdd={addProject} onCancel={() => setShowNew(false)} />}
         <datalist id="rml-clients">{allClients.map((cl) => <option key={cl} value={cl} />)}</datalist>
 
