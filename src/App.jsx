@@ -1377,6 +1377,7 @@ export default function App() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadState, setLoadState] = useState("loading"); // loading | ok | failed | mismatch
+  const [userEmptied, setUserEmptied] = useState(false);  // true only after an explicit delete
   const [showNew, setShowNew] = useState(false);
   const [filter, setFilter] = useState("active");
   const [search, setSearch] = useState("");
@@ -1429,14 +1430,18 @@ export default function App() {
   useEffect(() => {
     if (loading || !authed) return;
     if (loadState !== "ok") return;        // never write back after a failed/ambiguous load
-    if (projects.length === 0) return;     // never write an empty list
+    if (projects.length === 0 && !userEmptied) return;  // empty only saves after a deliberate delete
     saveMirror(projects);
     saveProjectsToSheet(projects).catch(console.error);
-  }, [projects, loading, authed, loadState]);
+  }, [projects, loading, authed, loadState, userEmptied]);
 
-  const addProject = (p) => { setProjects((prev) => [p,...prev]); setShowNew(false); };
+  const addProject = (p) => { setUserEmptied(false); setProjects((prev) => [p,...prev]); setShowNew(false); };
   const updateProject = (p) => setProjects((prev) => prev.map((x) => x.id===p.id ? p : x));
-  const deleteProject = (id) => setProjects((prev) => prev.filter((p) => p.id!==id));
+  const deleteProject = (id) => setProjects((prev) => {
+    const next = prev.filter((p) => p.id!==id);
+    if (next.length === 0) setUserEmptied(true);  // deliberate, allow the empty save
+    return next;
+  });
 
   const restoreProjects = (ev) => {
     const file = ev.target.files?.[0];
@@ -1448,6 +1453,7 @@ export default function App() {
         if (!Array.isArray(data) || data.length === 0) { alert("Skráin inniheldur engin verkefni."); return; }
         if (!window.confirm(`Endurheimta ${data.length} verkefni? Þetta skrifar yfir það sem er í skjalinu núna.`)) return;
         const clean = data.map(ensureLocations);
+        setUserEmptied(false);
         setProjects(clean);
         setLoadState("ok");
         saveMirror(clean);
