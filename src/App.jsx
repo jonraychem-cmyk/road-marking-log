@@ -672,6 +672,14 @@ function SettingsPanel({ onClose }) {
 }
 
 // ── Hours ─────────────────────────────────────────────────────────────────────
+const MIRROR_KEY = "rml_projects_mirror";
+function saveMirror(projects) {
+  try { localStorage.setItem(MIRROR_KEY, JSON.stringify({ at:new Date().toISOString(), projects })); } catch {}
+}
+function loadMirror() {
+  try { return JSON.parse(localStorage.getItem(MIRROR_KEY)) || null; } catch { return null; }
+}
+
 const SHIFT_KEY = "rml_shift";
 const HOURSLOG_KEY = "rml_hourslog";
 function loadShift() { try { return JSON.parse(localStorage.getItem(SHIFT_KEY)) || null; } catch { return null; } }
@@ -1371,6 +1379,7 @@ export default function App() {
   const [authed, setAuthed] = useState(() => localStorage.getItem("rml_auth") === "1");
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadState, setLoadState] = useState("loading"); // loading | ok | failed | mismatch
   const [showNew, setShowNew] = useState(false);
   const [filter, setFilter] = useState("active");
   const [search, setSearch] = useState("");
@@ -1391,18 +1400,64 @@ export default function App() {
   useEffect(() => {
     if (!authed) return;
     loadProjectsFromSheet()
-      .then((data) => { if (Array.isArray(data) && data.length > 0) setProjects(data.map(ensureLocations)); else setProjects(initialProjects); })
-      .catch(() => setProjects(initialProjects))
+      .then((data) => {
+        if (!Array.isArray(data)) throw new Error("bad payload");
+        if (data.length > 0) {
+          const clean = data.map(ensureLocations);
+          setProjects(clean);
+          saveMirror(clean);
+          setLoadState("ok");
+        } else {
+          // Sheet is genuinely empty. If we have a local mirror, the sheet was
+          // probably wiped — do NOT save over it, let the user decide.
+          const mirror = loadMirror();
+          if (mirror && mirror.projects?.length) {
+            setProjects(mirror.projects);
+            setLoadState("mismatch");
+          } else {
+            setProjects(initialProjects);
+            setLoadState("ok");   // first run, safe to save
+          }
+        }
+      })
+      .catch(() => {
+        // Load failed. Show whatever we last had locally, but never write back.
+        const mirror = loadMirror();
+        setProjects(mirror?.projects || []);
+        setLoadState("failed");
+      })
       .finally(() => setLoading(false));
   }, [authed]);
 
   useEffect(() => {
-    if (!loading && authed && projects.length > 0) saveProjectsToSheet(projects).catch(console.error);
-  }, [projects, loading, authed]);
+    if (loading || !authed) return;
+    if (loadState !== "ok") return;        // never write back after a failed/ambiguous load
+    if (projects.length === 0) return;     // never write an empty list
+    saveMirror(projects);
+    saveProjectsToSheet(projects).catch(console.error);
+  }, [projects, loading, authed, loadState]);
 
   const addProject = (p) => { setProjects((prev) => [p,...prev]); setShowNew(false); };
   const updateProject = (p) => setProjects((prev) => prev.map((x) => x.id===p.id ? p : x));
   const deleteProject = (id) => setProjects((prev) => prev.filter((p) => p.id!==id));
+
+  const restoreProjects = (ev) => {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!Array.isArray(data) || data.length === 0) { alert("Skráin inniheldur engin verkefni."); return; }
+        if (!window.confirm(`Endurheimta ${data.length} verkefni? Þetta skrifar yfir það sem er í skjalinu núna.`)) return;
+        const clean = data.map(ensureLocations);
+        setProjects(clean);
+        setLoadState("ok");
+        saveMirror(clean);
+      } catch { alert("Gat ekki lesið skrána."); }
+    };
+    reader.readAsText(file);
+  };
 
   const backupProjects = () => {
     const blob = new Blob([JSON.stringify(projects, null, 2)], { type:"application/json" });
@@ -1534,6 +1589,26 @@ export default function App() {
         {showNew && <NewProjectForm onAdd={addProject} onCancel={() => setShowNew(false)} />}
         <datalist id="rml-clients">{allClients.map((cl) => <option key={cl} value={cl} />)}</datalist>
 
+        {loadState === "failed" && (
+          <div style={{ background:"#2a0f0f", border:"1px solid #5a1a1a", borderRadius:8, padding:"12px 14px", marginBottom:14 }}>
+            <div style={{ color:"#c05050", fontSize:13, fontWeight:700, marginBottom:4 }}>⚠ Náði ekki sambandi við skjalið</div>
+            <div style={{ color:"#a08080", fontSize:12, lineHeight:1.5 }}>
+              Sýni síðustu vistuðu gögn úr símanum. <b>Ekkert verður vistað</b> fyrr en samband næst — engin hætta á að skrifa yfir.
+            </div>
+            <button onClick={() => window.location.reload()} style={{ ...btnSecondary, fontSize:12, padding:"6px 14px", marginTop:10 }}>Reyna aftur</button>
+          </div>
+        )}
+
+        {loadState === "mismatch" && (
+          <div style={{ background:"#2a2a10", border:"1px solid #5a4a10", borderRadius:8, padding:"12px 14px", marginBottom:14 }}>
+            <div style={{ color:"#c0a040", fontSize:13, fontWeight:700, marginBottom:4 }}>⚠ Skjalið er tómt</div>
+            <div style={{ color:"#a09060", fontSize:12, lineHeight:1.5, marginBottom:10 }}>
+              Sýni {projects.length} verkefni úr afriti símans. Ekkert vistast fyrr en þú staðfestir.
+            </div>
+            <button onClick={() => { setLoadState("ok"); }} style={{ ...btnPrimary, fontSize:12, padding:"6px 14px" }}>Endurheimta í skjalið</button>
+          </div>
+        )}
+
         {filtered.length===0 && (
           <div style={{ textAlign:"center", color:"#444", padding:"40px 20px", fontSize:14 }}>
             {search ? "Engin verkefni passa við leitina" : "Engin verkefni hér ennþá"}
@@ -1581,6 +1656,10 @@ export default function App() {
             <button key={f.val} onClick={() => setSeasonFilter(f.val)} style={{ background:seasonFilter===f.val?"#e8f0e8":"none", color:seasonFilter===f.val?"#111":"#666", border:seasonFilter===f.val?"none":"1px solid #222", borderRadius:16, padding:"5px 10px", fontSize:11, cursor:"pointer", fontWeight:seasonFilter===f.val?700:400 }}>{f.label}</button>
           ))}
           <button onClick={backupProjects} style={{ marginLeft:"auto", background:"none", border:"1px solid #222", borderRadius:16, padding:"5px 10px", fontSize:11, color:"#555", cursor:"pointer" }}>💾 Backup</button>
+          <label style={{ background:"none", border:"1px solid #222", borderRadius:16, padding:"5px 10px", fontSize:11, color:"#555", cursor:"pointer" }}>
+            ↥ Endurheimta
+            <input type="file" accept="application/json,.json" onChange={restoreProjects} style={{ display:"none" }} />
+          </label>
           <button onClick={() => setShowNewSeason(true)} style={{ background:"#1a2a1a", border:"1px solid #2a4a2a", borderRadius:16, padding:"5px 10px", fontSize:11, color:"#4a9a4a", cursor:"pointer" }}>🔄 Nýtt tímabil</button>
         </div>
       </div>
