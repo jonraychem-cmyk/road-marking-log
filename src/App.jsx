@@ -111,6 +111,18 @@ function carsOf(project) {
   if (Array.isArray(project.assignedCars)) return project.assignedCars.filter(Boolean);
   return project.assignedTo ? [project.assignedTo] : [];
 }
+// A project's middle level is hidden when it has exactly one verkefni that was
+// auto-created (flagged _auto) and never renamed. Small jobs log straight in.
+function isSingleSite(project) {
+  const locs = project.locations || [];
+  return locs.length === 1 && locs[0]._auto;
+}
+function ensureLocations(project) {
+  // guarantee at least one verkefni exists to log into
+  if ((project.locations||[]).length > 0) return project;
+  return { ...project, locations:[{ id:Date.now(), name:project.name, workItems:[], address:"", _auto:true }] };
+}
+
 function carsLabel(project) {
   const cs = carsOf(project);
   return cs.length ? cs.join(" · ") : "Óúthlutað";
@@ -524,7 +536,7 @@ function openMaps(address) {
 }
 
 // ── Location Log ──────────────────────────────────────────────────────────────
-function LocationLog({ location, project, onUpdate, onDelete }) {
+function LocationLog({ location, project, onUpdate, onDelete, hideName }) {
   const [showForm, setShowForm] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
   const [editingAddress, setEditingAddress] = useState(false);
@@ -548,10 +560,11 @@ function LocationLog({ location, project, onUpdate, onDelete }) {
   const saveAddress = () => { onUpdate({ ...location, address: addressDraft }); setEditingAddress(false); };
 
   return (
-    <div style={{ background:"#111", border:"1px solid #2a2a2a", borderRadius:8, padding:14, marginBottom:10 }}>
+    <div style={{ background:hideName?"none":"#111", border:hideName?"none":"1px solid #2a2a2a", borderRadius:8, padding:hideName?0:14, marginBottom:10 }}>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
         <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          <span style={{ fontWeight:600, color:"#e0e0e0", fontSize:15 }}>{location.name}</span>
+          {!hideName && <span style={{ fontWeight:600, color:"#e0e0e0", fontSize:15 }}>{location.name}</span>}
+          {hideName && <span style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5 }}>Skráning</span>}
           <SyncBadge status={syncStatus} />
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:6 }}>
@@ -659,29 +672,65 @@ function SettingsPanel({ onClose }) {
 }
 
 // ── Hours ─────────────────────────────────────────────────────────────────────
+const SHIFT_KEY = "rml_shift";
+const HOURSLOG_KEY = "rml_hourslog";
+function loadShift() { try { return JSON.parse(localStorage.getItem(SHIFT_KEY)) || null; } catch { return null; } }
+function saveShift(s) { localStorage.setItem(SHIFT_KEY, JSON.stringify(s)); }
+function clearShift() { localStorage.removeItem(SHIFT_KEY); }
+function shiftElapsed(rounded) {
+  const mins = Math.floor((Date.now() - new Date(rounded)) / 60000);
+  const h = Math.floor(mins/60), m = mins%60;
+  return h > 0 ? `${h}klst ${m}mín` : `${m}mín`;
+}
+
 function roundDown15(date) { const d = new Date(date); d.setMinutes(Math.floor(d.getMinutes()/15)*15, 0, 0); return d; }
 function roundUp15(date) { const d = new Date(date); const m = d.getMinutes(); const rem = m % 15; if (rem === 0) return d; d.setMinutes(m + (15 - rem), 0, 0); return d; }
 function fmtTime(date) { return date.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" }); }
 function diffHours(a, b) { return ((b - a) / 3600000).toFixed(2); }
-function HoursTracker({ onClose }) {
-  const [name, setName] = useState("");
-  const [clockedIn, setClockedIn] = useState(null);
-  const [breaks, setBreaks] = useState(0);
-  const [log, setLog] = useState([]);
+function HoursTracker({ onClose, onShiftChange }) {
+  const saved = loadShift();
+  const [name, setName] = useState(() => saved?.name || localStorage.getItem("rml_name") || "");
+  const [clockedIn, setClockedIn] = useState(() => saved ? { raw:new Date(saved.raw), rounded:new Date(saved.rounded), name:saved.name } : null);
+  const [breaks, setBreaks] = useState(() => saved?.breaks ?? 0);
+  const [note, setNote] = useState(() => saved?.note || "");
+  const [log, setLog] = useState(() => { try { return JSON.parse(localStorage.getItem(HOURSLOG_KEY)) || []; } catch { return []; } });
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
-  const clockIn = () => { if (!name.trim()) return; const now = new Date(); setClockedIn({ raw:now, rounded:roundDown15(now), name:name.trim() }); setSynced(false); };
+
+  // keep the saved shift in step with break/note edits
+  useEffect(() => {
+    if (!clockedIn) return;
+    saveShift({ raw:clockedIn.raw.toISOString(), rounded:clockedIn.rounded.toISOString(), name:clockedIn.name, breaks, note });
+  }, [clockedIn, breaks, note]);
+
+  const clockIn = () => {
+    if (!name.trim()) return;
+    const now = new Date();
+    const shift = { raw:now, rounded:roundDown15(now), name:name.trim() };
+    localStorage.setItem("rml_name", name.trim());
+    setClockedIn(shift);
+    saveShift({ raw:shift.raw.toISOString(), rounded:shift.rounded.toISOString(), name:shift.name, breaks:0, note:"" });
+    setSynced(false);
+    onShiftChange && onShiftChange();
+  };
+
   const clockOut = async () => {
     if (!clockedIn) return;
     const now = new Date(); const roundedOut = roundUp15(now);
     const hours = diffHours(clockedIn.rounded, roundedOut);
     const today = now.toLocaleDateString("en-GB");
     const breakNote = breaks === 1 ? "Mínus matur" : breaks === 2 ? "Mínus matur x2" : "";
-    const entry = { date:today, name:clockedIn.name, clockIn:fmtTime(clockedIn.rounded), clockOut:fmtTime(roundedOut), hours, breakNote };
-    setLog([...log, entry]); setSyncing(true);
-    appendHoursToSheet([entry.date, entry.name, entry.clockIn, entry.clockOut, entry.hours, breakNote]).catch(console.error);
+    const fullNote = [breakNote, note.trim()].filter(Boolean).join(" · ");
+    const entry = { date:today, name:clockedIn.name, clockIn:fmtTime(clockedIn.rounded), clockOut:fmtTime(roundedOut), hours, breakNote:fullNote };
+    const nextLog = [...log, entry];
+    setLog(nextLog);
+    localStorage.setItem(HOURSLOG_KEY, JSON.stringify(nextLog.slice(-20)));
+    setSyncing(true);
+    appendHoursToSheet([entry.date, entry.name, entry.clockIn, entry.clockOut, entry.hours, fullNote]).catch(console.error);
     setTimeout(() => { setSyncing(false); setSynced(true); }, 1000);
-    setClockedIn(null); setBreaks(0);
+    setClockedIn(null); setBreaks(0); setNote("");
+    clearShift();
+    onShiftChange && onShiftChange();
   };
   return (
     <div style={{ background:"#161616", border:"1px solid #2a2a2a", borderRadius:10, marginBottom:16, overflow:"hidden" }}>
@@ -699,12 +748,17 @@ function HoursTracker({ onClose }) {
           <div style={{ textAlign:"center" }}>
             <div style={{ color:"#555", fontSize:12, marginBottom:4 }}>{clockedIn.name} · stimplað inn</div>
             <div style={{ fontSize:36, fontWeight:800, color:"#4a9a4a", marginBottom:2 }}>{fmtTime(clockedIn.rounded)}</div>
-            <div style={{ color:"#444", fontSize:11, marginBottom:16 }}>af {fmtTime(clockedIn.raw)}</div>
+            <div style={{ color:"#444", fontSize:11, marginBottom:4 }}>af {fmtTime(clockedIn.raw)}</div>
+            <div style={{ color:"#4a9a4a", fontSize:13, fontWeight:600, marginBottom:16 }}>⏱ {shiftElapsed(clockedIn.rounded)}</div>
             <div style={{ marginBottom:14 }}>
               <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:8 }}>Pása tekin?</div>
               <div style={{ display:"flex", gap:8, justifyContent:"center" }}>
                 {[{val:0,label:"Engin"},{val:1,label:"Matur"},{val:2,label:"Matur x2"}].map((b) => <button key={b.val} onClick={() => setBreaks(b.val)} style={{ background:breaks===b.val?"#e8f0e8":"#1a1a1a", color:breaks===b.val?"#111":"#666", border:`1px solid ${breaks===b.val?"#e8f0e8":"#333"}`, borderRadius:8, padding:"7px 14px", fontSize:12, fontWeight:breaks===b.val?700:400, cursor:"pointer" }}>{b.label}</button>)}
               </div>
+            </div>
+            <div style={{ marginBottom:12, textAlign:"left" }}>
+              <label style={labelStyle}>Athugasemd (valkvæmt)</label>
+              <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="t.d. rigning, bilun, aukaverk" style={{ ...inputStyle, fontSize:13 }} />
             </div>
             <button onClick={clockOut} style={{ background:"#e8f0e8", color:"#111", border:"none", borderRadius:8, padding:"12px 32px", fontSize:14, fontWeight:700, cursor:"pointer", width:"100%" }}>Stimpla út</button>
           </div>
@@ -972,10 +1026,14 @@ function ListsView({ projects, carFilter, onClose, onStartWork, onChange }) {
 function WorkMode({ project, onUpdate, onExit }) {
   const [newLocName, setNewLocName] = useState("");
   const [showAddLoc, setShowAddLoc] = useState(false);
+  const single = isSingleSite(project);
   const updateLocation = (loc) => onUpdate({ ...project, locations:project.locations.map((l) => l.id===loc.id ? loc : l) });
   const addLocation = () => {
     if (!newLocName.trim()) return;
-    onUpdate({ ...project, locations:[...project.locations, { id:Date.now(), name:newLocName.trim(), workItems:[], address:"" }] });
+    // If the only verkefni is the auto one, adopt this name onto a real second entry
+    // by clearing the _auto flag scheme: rename auto -> keep, and append the new real one.
+    const locs = project.locations.map((l) => l._auto ? { ...l, _auto:false } : l);
+    onUpdate({ ...project, locations:[...locs, { id:Date.now(), name:newLocName.trim(), workItems:[], address:"" }] });
     setNewLocName(""); setShowAddLoc(false);
   };
   const hasDrawings = (project.drawings||[]).length > 0;
@@ -1007,6 +1065,22 @@ function WorkMode({ project, onUpdate, onExit }) {
           </div>
         )}
         {(project.notes || hasDrawings) && <div style={{ borderTop:"1px solid #1a1a1a", marginBottom:14 }} />}
+        {single ? (
+          // Single-site: log straight into the hidden verkefni, no middle level shown
+          <div>
+            <LocationLog key={project.locations[0].id} location={project.locations[0]} project={project} onUpdate={updateLocation} hideName />
+            {showAddLoc ? (
+              <div style={{ display:"flex", gap:8, marginTop:8 }}>
+                <input type="text" value={newLocName} onChange={(e) => setNewLocName(e.target.value)} onKeyDown={(e) => e.key==="Enter" && addLocation()} placeholder="Nafn nýs verkefnis" style={{ ...inputStyle, flex:1 }} autoFocus />
+                <button onClick={addLocation} style={btnPrimary}>Bæta við</button>
+                <button onClick={() => setShowAddLoc(false)} style={btnSecondary}>×</button>
+              </div>
+            ) : (
+              <button onClick={() => setShowAddLoc(true)} style={{ ...btnSecondary, fontSize:12, marginTop:8, width:"100%" }}>+ Skipta upp í verkefni</button>
+            )}
+          </div>
+        ) : (
+        <>
         <div style={{ color:"#666", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, marginBottom:10 }}>Verkefni</div>
         {project.locations.length === 0 && <div style={{ color:"#444", fontSize:13, marginBottom:10 }}>Ekkert skráð enn — bættu við hér að neðan</div>}
         {project.locations.map((loc) => (
@@ -1021,6 +1095,8 @@ function WorkMode({ project, onUpdate, onExit }) {
           </div>
         ) : (
           <button onClick={() => setShowAddLoc(true)} style={{ ...btnSecondary, fontSize:12, marginTop:4, width:"100%" }}>+ Bæta við verkefni</button>
+        )}
+        </>
         )}
       </div>
     </div>
@@ -1090,7 +1166,8 @@ function ProjectCard({ project, onUpdate, onDelete, onStartWork, onMoveUp, onMov
 
   const addLocation = () => {
     if (!newLocationName.trim()) return;
-    onUpdate({ ...project, locations:[...project.locations, { id:Date.now(), name:newLocationName.trim(), workItems:[], address:"" }] });
+    const locs = project.locations.map((l) => l._auto ? { ...l, _auto:false } : l);
+    onUpdate({ ...project, locations:[...locs, { id:Date.now(), name:newLocationName.trim(), workItems:[], address:"" }] });
     setNewLocationName(""); setShowAddLocation(false);
   };
   const updateLocation = (loc) => onUpdate({ ...project, locations:project.locations.map((l) => l.id===loc.id ? loc : l) });
@@ -1098,7 +1175,8 @@ function ProjectCard({ project, onUpdate, onDelete, onStartWork, onMoveUp, onMov
   const contactCount = (project.contacts||[]).length;
   const checklist = project.checklist||[];
   const checkDone = checklist.filter((i) => i.done).length;
-  const locSummary = project.locations.map((l) => l.workItems.length > 0 ? `${l.name} (${l.workItems.length})` : l.name).join(" · ");
+  const single = isSingleSite(project);
+  const locSummary = single ? "" : project.locations.map((l) => l.workItems.length > 0 ? `${l.name} (${l.workItems.length})` : l.name).join(" · ");
 
   return (
     <div style={{ background:"#161616", border:project.finished?"1px solid #2a3a2a":"1px solid #2a2a2a", borderRadius:10, marginBottom:collapsed?6:12, overflow:"hidden" }}>
@@ -1150,18 +1228,35 @@ function ProjectCard({ project, onUpdate, onDelete, onStartWork, onMoveUp, onMov
           <div style={{ borderTop:"1px solid #1a1a1a", marginBottom:12 }} />
           <CommentsSection project={project} />
           <div style={{ borderTop:"1px solid #1a1a1a", marginBottom:12 }} />
-          {project.locations.map((loc) => (
-            <LocationLog key={loc.id} location={loc} project={project} onUpdate={updateLocation}
-              onDelete={(id) => onUpdate({ ...project, locations:project.locations.filter((l) => l.id!==id) })} />
-          ))}
-          {showAddLocation ? (
-            <div style={{ display:"flex", gap:8, marginTop:8 }}>
-              <input type="text" value={newLocationName} onChange={(e) => setNewLocationName(e.target.value)} placeholder="Nafn verkefnis" style={{ ...inputStyle, flex:1 }} onKeyDown={(e) => e.key==="Enter" && addLocation()} />
-              <button onClick={addLocation} style={btnPrimary}>Bæta við</button>
-              <button onClick={() => setShowAddLocation(false)} style={btnSecondary}>×</button>
+          {single ? (
+            <div>
+              <LocationLog key={project.locations[0].id} location={project.locations[0]} project={project} onUpdate={updateLocation} hideName />
+              {showAddLocation ? (
+                <div style={{ display:"flex", gap:8, marginTop:8 }}>
+                  <input type="text" value={newLocationName} onChange={(e) => setNewLocationName(e.target.value)} placeholder="Nafn nýs verkefnis" style={{ ...inputStyle, flex:1 }} onKeyDown={(e) => e.key==="Enter" && addLocation()} />
+                  <button onClick={addLocation} style={btnPrimary}>Bæta við</button>
+                  <button onClick={() => setShowAddLocation(false)} style={btnSecondary}>×</button>
+                </div>
+              ) : (
+                <button onClick={() => setShowAddLocation(true)} style={{ ...btnSecondary, fontSize:12, marginTop:8, width:"100%" }}>+ Skipta upp í verkefni</button>
+              )}
             </div>
           ) : (
-            <button onClick={() => setShowAddLocation(true)} style={{ ...btnSecondary, fontSize:12, marginTop:4 }}>+ Bæta við verkefni</button>
+            <>
+            {project.locations.map((loc) => (
+              <LocationLog key={loc.id} location={loc} project={project} onUpdate={updateLocation}
+                onDelete={(id) => onUpdate({ ...project, locations:project.locations.filter((l) => l.id!==id) })} />
+            ))}
+            {showAddLocation ? (
+              <div style={{ display:"flex", gap:8, marginTop:8 }}>
+                <input type="text" value={newLocationName} onChange={(e) => setNewLocationName(e.target.value)} placeholder="Nafn verkefnis" style={{ ...inputStyle, flex:1 }} onKeyDown={(e) => e.key==="Enter" && addLocation()} />
+                <button onClick={addLocation} style={btnPrimary}>Bæta við</button>
+                <button onClick={() => setShowAddLocation(false)} style={btnSecondary}>×</button>
+              </div>
+            ) : (
+              <button onClick={() => setShowAddLocation(true)} style={{ ...btnSecondary, fontSize:12, marginTop:4 }}>+ Bæta við verkefni</button>
+            )}
+            </>
           )}
           <div style={{ display:"flex", gap:8, marginTop:14, paddingTop:14, borderTop:"1px solid #222" }}>
             <button onClick={() => onUpdate({ ...project, finished:!project.finished })} style={project.finished?btnSecondary:btnSuccess}>{project.finished?"Enduropna":"Merkja lokið"}</button>
@@ -1188,7 +1283,7 @@ function NewProjectForm({ onAdd, onCancel }) {
   const [projectType, setProjectType] = useState("seasonal");
   const handleAdd = () => {
     if (!name.trim()) return;
-    onAdd({ id:Date.now(), name:name.trim(), region, subRegion, assignedCars, client:client.trim(), notes, finished:false, onHold:false, drawings:[], locations:[], contacts:[], checklist:[], projectType });
+    onAdd({ id:Date.now(), name:name.trim(), region, subRegion, assignedCars, client:client.trim(), notes, finished:false, onHold:false, drawings:[], locations:[{ id:Date.now()+1, name:name.trim(), workItems:[], address:"", _auto:true }], contacts:[], checklist:[], projectType });
   };
   return (
     <div style={{ background:"#161616", border:"1px solid #333", borderRadius:10, padding:16, marginBottom:16 }}>
@@ -1290,11 +1385,13 @@ export default function App() {
   const [openGroups, setOpenGroups] = useState(() => { try { return JSON.parse(localStorage.getItem("rml_opengroups")) || {}; } catch { return {}; } });
   const [showNewSeason, setShowNewSeason] = useState(false);
   const [listCount, setListCount] = useState(() => listsBadgeCount());
+  const [shift, setShift] = useState(() => loadShift());
+  useEffect(() => { const t = setInterval(() => setShift(loadShift()), 30000); return () => clearInterval(t); }, []);
 
   useEffect(() => {
     if (!authed) return;
     loadProjectsFromSheet()
-      .then((data) => { if (Array.isArray(data) && data.length > 0) setProjects(data); else setProjects(initialProjects); })
+      .then((data) => { if (Array.isArray(data) && data.length > 0) setProjects(data.map(ensureLocations)); else setProjects(initialProjects); })
       .catch(() => setProjects(initialProjects))
       .finally(() => setLoading(false));
   }, [authed]);
@@ -1420,7 +1517,7 @@ export default function App() {
         </div>
         <div style={{ display:"flex", gap:6, justifyContent:"flex-end", marginBottom:8 }}>
           <button onClick={() => { setShowLists(!showLists); setShowHours(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showLists?"#1a2a1a":"none", color:showLists?"#4a9a4a":"#555", border:`1px solid ${showLists?"#2a4a2a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>📋 Listar{listCount>0 && <span style={{ marginLeft:5, background:"#2a4a2a", color:"#4a9a4a", borderRadius:8, padding:"1px 6px", fontSize:10, fontWeight:700 }}>{listCount}</span>}</button>
-          <button onClick={() => { setShowHours(!showHours); setShowLists(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showHours?"#1a2a3a":"none", color:showHours?"#6aacf0":"#555", border:`1px solid ${showHours?"#2a4a6a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⏱ Vinnustundir</button>
+          <button onClick={() => { setShowHours(!showHours); setShowLists(false); setShowPrivate(false); setShowSettings(false); }} style={{ background:showHours?"#1a2a3a":"none", color:showHours?"#6aacf0":"#555", border:`1px solid ${showHours?"#2a4a6a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⏱ {shift ? <span style={{ color:"#4a9a4a", fontWeight:700 }}>Á vakt · {shiftElapsed(shift.rounded)}</span> : "Vinnustundir"}</button>
           <button onClick={() => { setShowPrivate(!showPrivate); setShowHours(false); setShowLists(false); setShowSettings(false); }} style={{ background:showPrivate?"#2a1a2a":"none", color:showPrivate?"#a06ac0":"#555", border:`1px solid ${showPrivate?"#4a2a5a":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>🎒</button>
           <button onClick={() => { setShowSettings(!showSettings); setShowPrivate(false); setShowHours(false); setShowLists(false); }} style={{ background:showSettings?"#2a2a1a":"none", color:showSettings?"#c0a040":"#555", border:`1px solid ${showSettings?"#5a4a10":"#222"}`, borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>⚙️</button>
         </div>
@@ -1429,7 +1526,7 @@ export default function App() {
       <div style={{ padding:"16px 16px 0" }}>
         {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
         {showPrivate && <PrivateChecklist onClose={() => setShowPrivate(false)} />}
-        {showHours && <HoursTracker onClose={() => setShowHours(false)} />}
+        {showHours && <HoursTracker onClose={() => setShowHours(false)} onShiftChange={() => setShift(loadShift())} />}
         {showLists && <ListsView projects={projects} carFilter={carFilter}
           onChange={() => setListCount(listsBadgeCount())}
           onClose={() => setShowLists(false)}
