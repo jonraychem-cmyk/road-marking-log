@@ -145,10 +145,7 @@ const btnSecondary = { background:"none", color:"#888", border:"1px solid #333",
 const btnSuccess = { background:"#1a3a1a", color:"#4a9a4a", border:"1px solid #2a5a2a", borderRadius:6, padding:"8px 16px", fontSize:13, cursor:"pointer" };
 
 // ── Demo data ─────────────────────────────────────────────────────────────────
-const initialProjects = [
-  { id:1, name:"Keflavík flugvöllur", region:"Suðurland", subRegion:"Keflavík", assignedCars:["Sprinter"], finished:false, notes:"", drawings:[], contacts:[], checklist:[], projectType:"seasonal",
-    locations:[ { id:1, name:"Aðalstæði", workItems:[], address:"" }, { id:2, name:"Starfsmannastæði", workItems:[], address:"" } ] },
-];
+const initialProjects = [];  // no demo data — real projects only
 
 // ── Sync badge ────────────────────────────────────────────────────────────────
 function SyncBadge({ status }) {
@@ -1415,8 +1412,8 @@ export default function App() {
             setProjects(mirror.projects);
             setLoadState("mismatch");
           } else {
-            setProjects(initialProjects);
-            setLoadState("ok");   // first run, safe to save
+            setProjects([]);      // genuinely empty — first run
+            setLoadState("ok");
           }
         }
       })
