@@ -247,42 +247,70 @@ function ChecklistSection({ checklist=[], onUpdate }) {
 }
 
 // ── Contacts ──────────────────────────────────────────────────────────────────
+const CONTACT_KINDS = [
+  { v:"site",    label:"Á staðnum", dot:"📞" },
+  { v:"billing", label:"Reikningur", dot:"🧾" },
+  { v:"both",    label:"Bæði",       dot:"📞🧾" },
+];
+function kindOf(c) { return c.kind || (c.kennitala ? "billing" : "site"); }
+
 function ContactSection({ contacts=[], onUpdate }) {
   const [showForm, setShowForm] = useState(false);
+  const [kind, setKind] = useState("site");
   const [name, setName] = useState(""); const [phone, setPhone] = useState(""); const [role, setRole] = useState("");
   const [email, setEmail] = useState(""); const [kennitala, setKennitala] = useState("");
   const onKt = (v) => { const d = v.replace(/\D/g,"").slice(0,10); setKennitala(d.length>6 ? d.slice(0,6)+"-"+d.slice(6) : d); };
   const add = () => {
     if (!name.trim() && !phone.trim()) return;
-    onUpdate([...contacts, { id:Date.now(), name:name.trim(), phone:phone.trim(), email:email.trim(), kennitala:kennitala.trim(), role:role.trim() }]);
-    setName(""); setPhone(""); setRole(""); setEmail(""); setKennitala(""); setShowForm(false);
+    onUpdate([...contacts, { id:Date.now(), kind, name:name.trim(), phone:phone.trim(), email:email.trim(), kennitala:kennitala.trim(), role:role.trim() }]);
+    setName(""); setPhone(""); setRole(""); setEmail(""); setKennitala(""); setKind("site"); setShowForm(false);
   };
   const remove = (id) => onUpdate(contacts.filter((c) => c.id!==id));
   const telHref = (num) => "tel:" + num.replace(/[\s\-().]/g,"");
+  const showBilling = kind === "billing" || kind === "both";
+
   return (
     <div style={{ marginBottom:14 }}>
       <div style={sectionLabel}>Tengiliðir</div>
       {contacts.length===0 && !showForm && <div style={{ color:"#444", fontSize:13, marginBottom:8 }}>Engir tengiliðir</div>}
-      {contacts.map((c) => (
-        <div key={c.id} style={{ background:"#0f1a0f", border:"1px solid #1e3a1e", borderRadius:8, padding:"10px 12px", marginBottom:8, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ display:"flex", alignItems:"baseline", gap:6, flexWrap:"wrap" }}>
-              {c.name && <span style={{ color:"#d0e8d0", fontSize:14, fontWeight:600 }}>{c.name}</span>}
-              {c.role && <span style={{ color:"#4a7a4a", fontSize:12 }}>{c.role}</span>}
+      {contacts.map((c) => {
+        const k = kindOf(c);
+        const meta = CONTACT_KINDS.find((x) => x.v === k) || CONTACT_KINDS[0];
+        const isBilling = k === "billing" || k === "both";
+        return (
+          <div key={c.id} style={{ background:isBilling?"#161a10":"#0f1a0f", border:`1px solid ${isBilling?"#3a3a1e":"#1e3a1e"}`, borderRadius:8, padding:"10px 12px", marginBottom:8, display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:10 }}>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ display:"flex", alignItems:"baseline", gap:6, flexWrap:"wrap" }}>
+                <span style={{ fontSize:11 }}>{meta.dot}</span>
+                {c.name && <span style={{ color:"#d0e8d0", fontSize:14, fontWeight:600 }}>{c.name}</span>}
+                <span style={{ color:isBilling?"#c0a040":"#4a7a4a", fontSize:11 }}>{meta.label}</span>
+                {c.role && <span style={{ color:"#555", fontSize:11 }}>· {c.role}</span>}
+              </div>
+              {c.phone && <a href={telHref(c.phone)} style={{ display:"inline-flex", alignItems:"center", gap:5, color:"#4a9a4a", fontSize:15, fontWeight:700, textDecoration:"none", marginTop:3, letterSpacing:0.3 }}><span style={{ fontSize:13, opacity:0.7 }}>📞</span>{c.phone}</a>}
+              {c.email && <a href={"mailto:"+c.email} style={{ display:"block", color:"#7ab8f5", fontSize:13, textDecoration:"none", marginTop:2, wordBreak:"break-all" }}>✉ {c.email}</a>}
+              {c.kennitala && <div style={{ color:"#c0a040", fontSize:12, marginTop:2, letterSpacing:0.3 }}>kt. {c.kennitala}</div>}
             </div>
-            {c.phone && <a href={telHref(c.phone)} style={{ display:"inline-flex", alignItems:"center", gap:5, color:"#4a9a4a", fontSize:15, fontWeight:700, textDecoration:"none", marginTop:3, letterSpacing:0.3 }}><span style={{ fontSize:13, opacity:0.7 }}>📞</span>{c.phone}</a>}
-            {c.email && <a href={"mailto:"+c.email} style={{ display:"block", color:"#7ab8f5", fontSize:13, textDecoration:"none", marginTop:2, wordBreak:"break-all" }}>✉ {c.email}</a>}
-            {c.kennitala && <div style={{ color:"#4a7a4a", fontSize:12, marginTop:2, letterSpacing:0.3 }}>kt. {c.kennitala}</div>}
+            <button onClick={() => remove(c.id)} style={{ background:"none", border:"none", color:"#444", cursor:"pointer", fontSize:16, padding:"0 4px", flexShrink:0 }}>×</button>
           </div>
-          <button onClick={() => remove(c.id)} style={{ background:"none", border:"none", color:"#444", cursor:"pointer", fontSize:16, padding:"0 4px", flexShrink:0 }}>×</button>
-        </div>
-      ))}
+        );
+      })}
       {showForm ? (
         <div style={{ background:"#1a1a1a", border:"1px solid #333", borderRadius:8, padding:12, marginTop:6 }}>
-          <div style={{ marginBottom:8 }}><label style={labelStyle}>Nafn</label><input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="t.d. Gunnar" style={inputStyle} /></div>
-          <div style={{ marginBottom:8 }}><label style={labelStyle}>Kennitala</label><input type="text" inputMode="numeric" value={kennitala} onChange={(e) => onKt(e.target.value)} placeholder="123456-7890" style={inputStyle} /></div>
-          <div style={{ marginBottom:8 }}><label style={labelStyle}>Símanúmer</label><input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="t.d. +354 555 1234" style={inputStyle} /></div>
-          <div style={{ marginBottom:8 }}><label style={labelStyle}>Netfang</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="t.d. nafn@fyrirtaeki.is" style={inputStyle} /></div>
+          <div style={{ marginBottom:10 }}><label style={labelStyle}>Tegund tengiliðs</label>
+            <div style={{ display:"flex", gap:6 }}>
+              {CONTACT_KINDS.map((o) => (
+                <button key={o.v} onClick={() => setKind(o.v)} style={{ flex:1, background:kind===o.v?"#e8f0e8":"#111", color:kind===o.v?"#111":"#666", border:`1px solid ${kind===o.v?"#e8f0e8":"#333"}`, borderRadius:8, padding:"7px 4px", fontSize:12, fontWeight:kind===o.v?700:400, cursor:"pointer" }}>{o.label}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginBottom:8 }}><label style={labelStyle}>Nafn eða fyrirtæki</label><input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="t.d. Gunnar" style={inputStyle} /></div>
+          <div style={{ marginBottom:8 }}><label style={labelStyle}>Símanúmer</label><input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="t.d. 555 1234" style={inputStyle} /></div>
+          {showBilling && (
+            <>
+              <div style={{ marginBottom:8 }}><label style={labelStyle}>Kennitala</label><input type="text" inputMode="numeric" value={kennitala} onChange={(e) => onKt(e.target.value)} placeholder="123456-7890" style={inputStyle} /></div>
+              <div style={{ marginBottom:8 }}><label style={labelStyle}>Netfang</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="t.d. nafn@fyrirtaeki.is" style={inputStyle} /></div>
+            </>
+          )}
           <div style={{ marginBottom:10 }}><label style={labelStyle}>Hlutverk (valkvæmt)</label><input type="text" value={role} onChange={(e) => setRole(e.target.value)} placeholder="t.d. Verkstjóri" style={inputStyle} /></div>
           <div style={{ display:"flex", gap:8 }}><button onClick={add} style={btnPrimary}>Bæta við</button><button onClick={() => setShowForm(false)} style={btnSecondary}>Hætta við</button></div>
         </div>
@@ -1398,28 +1426,35 @@ function QuickJobForm({ onAdd, onCancel }) {
   const [email, setEmail] = useState("");
   const [kennitala, setKennitala] = useState("");
   const [town, setTown] = useState("");
+  // optional second contact, for when the site person isn't the one being billed
+  const [showSite, setShowSite] = useState(false);
+  const [siteName, setSiteName] = useState("");
+  const [sitePhone, setSitePhone] = useState("");
 
-  // 10 digits, shown as 123456-7890. Formatting only — never blocks saving.
   const onKt = (v) => {
     const d = v.replace(/\D/g, "").slice(0, 10);
     setKennitala(d.length > 6 ? d.slice(0,6) + "-" + d.slice(6) : d);
   };
-  const ktIncomplete = kennitala.replace(/\D/g, "").length > 0 && kennitala.replace(/\D/g, "").length < 10;
+  const ktDigits = kennitala.replace(/\D/g, "").length;
+  const ktIncomplete = ktDigits > 0 && ktDigits < 10;
 
   const create = () => {
     if (!name.trim()) return;
     const id = Date.now();
-    const hasContact = contact.trim() || phone.trim() || email.trim() || kennitala.trim();
+    const list = [];
+    if (contact.trim() || phone.trim() || email.trim() || kennitala.trim()) {
+      list.push({ id:id+2, kind:"billing", name:contact.trim(), phone:phone.trim(),
+                  email:email.trim(), kennitala:kennitala.trim(), role:"Verkkaupi" });
+    }
+    if (siteName.trim() || sitePhone.trim()) {
+      list.push({ id:id+3, kind:"site", name:siteName.trim(), phone:sitePhone.trim(),
+                  email:"", kennitala:"", role:"Á staðnum" });
+    }
     onAdd({
       id, name:name.trim(),
       region:"", subRegion:town.trim(), assignedCars:[], client:contact.trim(),
       notes:"", finished:false, onHold:false, unplanned:true,
-      drawings:[],
-      contacts: hasContact ? [{
-        id:id+2, name:contact.trim(), phone:phone.trim(),
-        email:email.trim(), kennitala:kennitala.trim(), role:"Verkkaupi",
-      }] : [],
-      checklist:[], projectType:"oneoff",
+      drawings:[], contacts:list, checklist:[], projectType:"oneoff",
       locations:[{ id:id+1, name:name.trim(), workItems:[], address:"", _auto:true }],
     });
   };
@@ -1435,23 +1470,36 @@ function QuickJobForm({ onAdd, onCancel }) {
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="t.d. Bílastæði Hafnarbraut 12" style={inputStyle} autoFocus />
       </div>
 
-      <div style={{ marginBottom:10 }}><label style={labelStyle}>Verkkaupi — nafn eða fyrirtæki</label>
+      <div style={{ color:"#c0a040", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5, margin:"14px 0 8px" }}>🧾 Reikningur sendist á</div>
+      <div style={{ marginBottom:10 }}><label style={labelStyle}>Nafn eða fyrirtæki</label>
         <input type="text" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="t.d. Húsfélag Hafnarbraut 12" style={inputStyle} />
       </div>
-
       <div style={{ marginBottom:10 }}><label style={labelStyle}>Kennitala</label>
         <input type="text" inputMode="numeric" value={kennitala} onChange={(e) => onKt(e.target.value)} placeholder="123456-7890"
           style={{ ...inputStyle, borderColor: ktIncomplete ? "#5a4a10" : "#333", letterSpacing:0.5 }} />
         {ktIncomplete && <div style={{ color:"#c0a040", fontSize:11, marginTop:4 }}>Kennitala er 10 tölustafir</div>}
       </div>
-
       <div style={{ marginBottom:10 }}><label style={labelStyle}>Símanúmer</label>
         <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="t.d. 555 1234" style={inputStyle} />
       </div>
-
       <div style={{ marginBottom:10 }}><label style={labelStyle}>Netfang</label>
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="t.d. nafn@fyrirtaeki.is" style={inputStyle} />
       </div>
+
+      {showSite ? (
+        <div style={{ borderTop:"1px solid #222", marginTop:14, paddingTop:12 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+            <div style={{ color:"#4a9a4a", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5 }}>📞 Tengiliður á staðnum</div>
+            <button onClick={() => { setShowSite(false); setSiteName(""); setSitePhone(""); }} style={{ background:"none", border:"none", color:"#555", fontSize:12, cursor:"pointer" }}>Fjarlægja</button>
+          </div>
+          <div style={{ marginBottom:8 }}><input type="text" value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="Nafn" style={inputStyle} /></div>
+          <div style={{ marginBottom:10 }}><input type="tel" value={sitePhone} onChange={(e) => setSitePhone(e.target.value)} placeholder="Símanúmer" style={inputStyle} /></div>
+        </div>
+      ) : (
+        <button onClick={() => setShowSite(true)} style={{ ...btnSecondary, fontSize:12, padding:"6px 12px", width:"100%", marginBottom:10 }}>
+          + Annar tengiliður á staðnum
+        </button>
+      )}
 
       <div style={{ marginBottom:14 }}><label style={labelStyle}>Bær (valkvæmt)</label>
         <input type="text" value={town} onChange={(e) => setTown(e.target.value)} placeholder="t.d. Akureyri" style={inputStyle} />
