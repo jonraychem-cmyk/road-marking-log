@@ -250,7 +250,13 @@ function ChecklistSection({ checklist=[], onUpdate }) {
 function ContactSection({ contacts=[], onUpdate }) {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState(""); const [phone, setPhone] = useState(""); const [role, setRole] = useState("");
-  const add = () => { if (!name.trim() && !phone.trim()) return; onUpdate([...contacts, { id:Date.now(), name:name.trim(), phone:phone.trim(), role:role.trim() }]); setName(""); setPhone(""); setRole(""); setShowForm(false); };
+  const [email, setEmail] = useState(""); const [kennitala, setKennitala] = useState("");
+  const onKt = (v) => { const d = v.replace(/\D/g,"").slice(0,10); setKennitala(d.length>6 ? d.slice(0,6)+"-"+d.slice(6) : d); };
+  const add = () => {
+    if (!name.trim() && !phone.trim()) return;
+    onUpdate([...contacts, { id:Date.now(), name:name.trim(), phone:phone.trim(), email:email.trim(), kennitala:kennitala.trim(), role:role.trim() }]);
+    setName(""); setPhone(""); setRole(""); setEmail(""); setKennitala(""); setShowForm(false);
+  };
   const remove = (id) => onUpdate(contacts.filter((c) => c.id!==id));
   const telHref = (num) => "tel:" + num.replace(/[\s\-().]/g,"");
   return (
