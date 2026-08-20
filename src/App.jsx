@@ -265,6 +265,8 @@ function ContactSection({ contacts=[], onUpdate }) {
               {c.role && <span style={{ color:"#4a7a4a", fontSize:12 }}>{c.role}</span>}
             </div>
             {c.phone && <a href={telHref(c.phone)} style={{ display:"inline-flex", alignItems:"center", gap:5, color:"#4a9a4a", fontSize:15, fontWeight:700, textDecoration:"none", marginTop:3, letterSpacing:0.3 }}><span style={{ fontSize:13, opacity:0.7 }}>📞</span>{c.phone}</a>}
+            {c.email && <a href={"mailto:"+c.email} style={{ display:"block", color:"#7ab8f5", fontSize:13, textDecoration:"none", marginTop:2, wordBreak:"break-all" }}>✉ {c.email}</a>}
+            {c.kennitala && <div style={{ color:"#4a7a4a", fontSize:12, marginTop:2, letterSpacing:0.3 }}>kt. {c.kennitala}</div>}
           </div>
           <button onClick={() => remove(c.id)} style={{ background:"none", border:"none", color:"#444", cursor:"pointer", fontSize:16, padding:"0 4px", flexShrink:0 }}>×</button>
         </div>
@@ -272,7 +274,9 @@ function ContactSection({ contacts=[], onUpdate }) {
       {showForm ? (
         <div style={{ background:"#1a1a1a", border:"1px solid #333", borderRadius:8, padding:12, marginTop:6 }}>
           <div style={{ marginBottom:8 }}><label style={labelStyle}>Nafn</label><input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="t.d. Gunnar" style={inputStyle} /></div>
+          <div style={{ marginBottom:8 }}><label style={labelStyle}>Kennitala</label><input type="text" inputMode="numeric" value={kennitala} onChange={(e) => onKt(e.target.value)} placeholder="123456-7890" style={inputStyle} /></div>
           <div style={{ marginBottom:8 }}><label style={labelStyle}>Símanúmer</label><input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="t.d. +354 555 1234" style={inputStyle} /></div>
+          <div style={{ marginBottom:8 }}><label style={labelStyle}>Netfang</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="t.d. nafn@fyrirtaeki.is" style={inputStyle} /></div>
           <div style={{ marginBottom:10 }}><label style={labelStyle}>Hlutverk (valkvæmt)</label><input type="text" value={role} onChange={(e) => setRole(e.target.value)} placeholder="t.d. Verkstjóri" style={inputStyle} /></div>
           <div style={{ display:"flex", gap:8 }}><button onClick={add} style={btnPrimary}>Bæta við</button><button onClick={() => setShowForm(false)} style={btnSecondary}>Hætta við</button></div>
         </div>
@@ -1164,7 +1168,7 @@ function EditProjectForm({ project, onSave, onCancel }) {
   const [assignedCars, setAssignedCars] = useState(carsOf(project));
   const [client, setClient] = useState(project.client || "");
   const [projectType, setProjectType] = useState(project.projectType || "seasonal");
-  const save = () => { if (!name.trim()) return; onSave({ ...project, name:name.trim(), region, subRegion, assignedCars, assignedTo:undefined, client:client.trim(), projectType }); };
+  const save = () => { if (!name.trim()) return; onSave({ ...project, name:name.trim(), region, subRegion, assignedCars, assignedTo:undefined, client:client.trim(), projectType, unplanned:false }); };
   return (
     <div style={{ background:"#1a1a1a", border:"1px solid #333", borderRadius:8, padding:14, marginBottom:12 }}>
       <div style={{ fontWeight:600, color:"#e0e0e0", fontSize:13, marginBottom:12 }}>Breyta verkefni</div>
@@ -1255,6 +1259,7 @@ function ProjectCard({ project, onUpdate, onDelete, onStartWork, onMoveUp, onMov
           )}
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+          {project.unplanned && <span title="Óvænt verk — vantar upplýsingar" style={{ background:"#2a2a10", color:"#c0a040", borderRadius:4, padding:"2px 6px", fontSize:11 }}>⚡</span>}
           {project.onHold && !project.finished && <span style={{ background:"#2a2a10", color:"#c0a040", borderRadius:4, padding:"2px 6px", fontSize:11 }}>Í bið</span>}
           {project.finished && <span style={{ background:"#1a3a1a", color:"#4a9a4a", borderRadius:4, padding:"2px 6px", fontSize:11 }}>Lokið</span>}
           <button onClick={(e) => { e.stopPropagation(); setCollapsed(!collapsed); setExpanded(false); }} style={{ background:"none", border:"1px solid #2a2a2a", borderRadius:6, color:"#555", cursor:"pointer", fontSize:11, padding:"3px 8px" }}>{collapsed ? "▼ Opna" : "▲ Loka"}</button>
@@ -1377,6 +1382,83 @@ function NewProjectForm({ onAdd, onCancel }) {
   );
 }
 
+// ── Quick job (unplanned walk-up work) ────────────────────────────────────────
+// Minimum needed on the spot: what it's called, who to bill. Everything else
+// the office can fill in later — the project is flagged so it's easy to find.
+function QuickJobForm({ onAdd, onCancel }) {
+  const [name, setName] = useState("");
+  const [contact, setContact] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [kennitala, setKennitala] = useState("");
+  const [town, setTown] = useState("");
+
+  // 10 digits, shown as 123456-7890. Formatting only — never blocks saving.
+  const onKt = (v) => {
+    const d = v.replace(/\D/g, "").slice(0, 10);
+    setKennitala(d.length > 6 ? d.slice(0,6) + "-" + d.slice(6) : d);
+  };
+  const ktIncomplete = kennitala.replace(/\D/g, "").length > 0 && kennitala.replace(/\D/g, "").length < 10;
+
+  const create = () => {
+    if (!name.trim()) return;
+    const id = Date.now();
+    const hasContact = contact.trim() || phone.trim() || email.trim() || kennitala.trim();
+    onAdd({
+      id, name:name.trim(),
+      region:"", subRegion:town.trim(), assignedCars:[], client:contact.trim(),
+      notes:"", finished:false, onHold:false, unplanned:true,
+      drawings:[],
+      contacts: hasContact ? [{
+        id:id+2, name:contact.trim(), phone:phone.trim(),
+        email:email.trim(), kennitala:kennitala.trim(), role:"Verkkaupi",
+      }] : [],
+      checklist:[], projectType:"oneoff",
+      locations:[{ id:id+1, name:name.trim(), workItems:[], address:"", _auto:true }],
+    });
+  };
+
+  return (
+    <div style={{ background:"#161616", border:"1px solid #5a4a10", borderRadius:10, padding:16, marginBottom:16 }}>
+      <div style={{ fontWeight:700, color:"#c0a040", marginBottom:4 }}>⚡ Óvænt verk</div>
+      <div style={{ color:"#666", fontSize:12, marginBottom:14, lineHeight:1.5 }}>
+        Bara það sem þarf til að rukka. Restina má fylla inn seinna.
+      </div>
+
+      <div style={{ marginBottom:10 }}><label style={labelStyle}>Heiti verks</label>
+        <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="t.d. Bílastæði Hafnarbraut 12" style={inputStyle} autoFocus />
+      </div>
+
+      <div style={{ marginBottom:10 }}><label style={labelStyle}>Verkkaupi — nafn eða fyrirtæki</label>
+        <input type="text" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="t.d. Húsfélag Hafnarbraut 12" style={inputStyle} />
+      </div>
+
+      <div style={{ marginBottom:10 }}><label style={labelStyle}>Kennitala</label>
+        <input type="text" inputMode="numeric" value={kennitala} onChange={(e) => onKt(e.target.value)} placeholder="123456-7890"
+          style={{ ...inputStyle, borderColor: ktIncomplete ? "#5a4a10" : "#333", letterSpacing:0.5 }} />
+        {ktIncomplete && <div style={{ color:"#c0a040", fontSize:11, marginTop:4 }}>Kennitala er 10 tölustafir</div>}
+      </div>
+
+      <div style={{ marginBottom:10 }}><label style={labelStyle}>Símanúmer</label>
+        <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="t.d. 555 1234" style={inputStyle} />
+      </div>
+
+      <div style={{ marginBottom:10 }}><label style={labelStyle}>Netfang</label>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="t.d. nafn@fyrirtaeki.is" style={inputStyle} />
+      </div>
+
+      <div style={{ marginBottom:14 }}><label style={labelStyle}>Bær (valkvæmt)</label>
+        <input type="text" value={town} onChange={(e) => setTown(e.target.value)} placeholder="t.d. Akureyri" style={inputStyle} />
+      </div>
+
+      <div style={{ display:"flex", gap:8 }}>
+        <button onClick={create} style={{ ...btnPrimary, flex:1, padding:"11px" }}>Stofna og byrja að skrá →</button>
+        <button onClick={onCancel} style={btnSecondary}>Hætta við</button>
+      </div>
+    </div>
+  );
+}
+
 // ── New Season Modal ──────────────────────────────────────────────────────────
 function NewSeasonModal({ onConfirm, onCancel }) {
   const [entered, setEntered] = useState("");
@@ -1424,6 +1506,7 @@ export default function App() {
   const [loadState, setLoadState] = useState("loading"); // loading | ok | failed | mismatch
   const [userEmptied, setUserEmptied] = useState(false);  // true only after an explicit delete
   const [showNew, setShowNew] = useState(false);
+  const [showQuick, setShowQuick] = useState(false);
   const [filter, setFilter] = useState("active");
   const [search, setSearch] = useState("");
   const [carFilter, setCarFilter] = useState("all");
@@ -1481,6 +1564,13 @@ export default function App() {
   }, [projects, loading, authed, loadState, userEmptied]);
 
   const addProject = (p) => { setUserEmptied(false); setProjects((prev) => [p,...prev]); setShowNew(false); };
+  const addQuickJob = (p) => {
+    setUserEmptied(false);
+    setProjects((prev) => [p, ...prev]);
+    setShowQuick(false);
+    localStorage.setItem("rml_workmode", String(p.id));
+    setWorkMode(String(p.id));   // straight into logging
+  };
   const updateProject = (p) => setProjects((prev) => prev.map((x) => x.id===p.id ? p : x));
   const deleteProject = (id) => setProjects((prev) => {
     const next = prev.filter((p) => p.id!==id);
@@ -1535,7 +1625,7 @@ export default function App() {
   };
 
   const filtered = projects.filter((p) => {
-    const matchesFilter = filter==="all"||(filter==="active"&&!p.finished&&!p.onHold)||(filter==="onhold"&&p.onHold&&!p.finished)||(filter==="finished"&&p.finished);
+    const matchesFilter = filter==="all"||(filter==="active"&&!p.finished&&!p.onHold)||(filter==="onhold"&&p.onHold&&!p.finished)||(filter==="unplanned"&&p.unplanned)||(filter==="finished"&&p.finished);
     const q = search.toLowerCase();
     const matchesSearch = !search||p.name.toLowerCase().includes(q)||(p.subRegion&&p.subRegion.toLowerCase().includes(q))||(p.client&&p.client.toLowerCase().includes(q));
     const matchesCar = carFilter==="all"||carsOf(p).includes(carFilter);
@@ -1600,13 +1690,16 @@ export default function App() {
             <div style={{ fontWeight:800, fontSize:18, letterSpacing:-0.5 }}>Vegmerkingar</div>
             <div style={{ color:"#444", fontSize:12 }}>{projects.filter((p) => !p.finished).length} virk · {projects.filter((p) => p.finished).length} lokið</div>
           </div>
-          <button onClick={() => setShowNew(!showNew)} style={{ background:"#e8f0e8", color:"#111", border:"none", borderRadius:20, padding:"8px 18px", fontWeight:700, fontSize:13, cursor:"pointer" }}>{showNew ? "Hætta við" : "+ Verkefni"}</button>
+          <div style={{ display:"flex", gap:6 }}>
+            <button onClick={() => { setShowQuick(!showQuick); setShowNew(false); }} title="Óvænt verk" style={{ background:showQuick?"#2a2a10":"none", color:showQuick?"#c0a040":"#666", border:`1px solid ${showQuick?"#5a4a10":"#333"}`, borderRadius:20, padding:"8px 14px", fontWeight:700, fontSize:13, cursor:"pointer" }}>⚡</button>
+            <button onClick={() => { setShowNew(!showNew); setShowQuick(false); }} style={{ background:"#e8f0e8", color:"#111", border:"none", borderRadius:20, padding:"8px 18px", fontWeight:700, fontSize:13, cursor:"pointer" }}>{showNew ? "Hætta við" : "+ Verkefni"}</button>
+          </div>
         </div>
         <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Leita að verkefnum…" style={{ ...inputStyle, marginBottom:10 }} />
         <div style={{ display:"flex", gap:6, marginBottom:8 }}>
-          {["active","onhold","finished","all"].map((f) => (
+          {["active","onhold","unplanned","finished","all"].map((f) => (
             <button key={f} onClick={() => setFilter(f)} style={{ background:filter===f?"#e8f0e8":"none", color:filter===f?"#111":"#666", border:filter===f?"none":"1px solid #222", borderRadius:16, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:filter===f?700:400 }}>
-              {f==="active"?"Virk":f==="onhold"?"Í bið":f==="finished"?"Lokið":"Öll"}
+              {f==="active"?"Virk":f==="onhold"?"Í bið":f==="unplanned"?"⚡":f==="finished"?"Lokið":"Öll"}
             </button>
           ))}
         </div>
@@ -1634,6 +1727,7 @@ export default function App() {
           onChange={() => setListCount(listsBadgeCount())}
           onClose={() => setShowLists(false)}
           onStartWork={(id) => { localStorage.setItem("rml_workmode", String(id)); setWorkMode(String(id)); }} />}
+        {showQuick && <QuickJobForm onAdd={addQuickJob} onCancel={() => setShowQuick(false)} />}
         {showNew && <NewProjectForm onAdd={addProject} onCancel={() => setShowNew(false)} />}
         <datalist id="rml-clients">{allClients.map((cl) => <option key={cl} value={cl} />)}</datalist>
 
