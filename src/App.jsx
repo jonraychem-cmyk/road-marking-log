@@ -86,6 +86,18 @@ const PIECE_TYPES = ["Blár ferningur","Blár bakgrunnur","Grænn bakgrunnur","G
 const STENCIL_NAMES = ["Fatlaður","Rafhlöðsla","Ör","BUS","Rúta","Gangkall","Hjólhýsi","Hjól","Annað"];
 const DEFAULT_WORK_TYPES = ["Bílastæðalínur","Bílastæðalínur + formerking","Gular línur","Gulur kantur","Miðlínur","Kantlínur","Skott",...PIECE_TYPES,"Stencil","Gangbraut","Þríhyrningar","Ferningar 50x50","Formerking",...THERMO_MODES,"Annað"];
 const WORK_TYPES = DEFAULT_WORK_TYPES;
+
+// Custom work types added in Settings store their unit here: { "Númer stencill": "pieces" }
+const UNITS_KEY = "rml_worktype_units";
+function loadUnits() { try { return JSON.parse(localStorage.getItem(UNITS_KEY)) || {}; } catch { return {}; } }
+function saveUnits(u) { localStorage.setItem(UNITS_KEY, JSON.stringify(u)); }
+// "meters" | "pieces" | null (null = handled by a built-in special form)
+function unitOf(type) {
+  if (METER_TYPES.includes(type)) return "meters";
+  if (PIECE_TYPES.includes(type)) return "pieces";
+  if (["Stencil","Gangbraut","Þríhyrningar","Ferningar 50x50","Annað",...THERMO_MODES].includes(type)) return null;
+  return loadUnits()[type] || "pieces";   // custom types default to pieces
+}
 try {
   const saved = JSON.parse(localStorage.getItem("rml_worktypes")||"null");
   if (saved && saved.includes("Línur") && !saved.includes("Bílastæðalínur")) localStorage.removeItem("rml_worktypes");
@@ -313,8 +325,8 @@ function TriangleMode({ onDone, onCancel, label="Þríhyrningar" }) {
         <div style={{ marginBottom:12 }}>
           <div style={{ color:"#555", fontSize:12, marginBottom:6 }}>{stops.length} stopp · {total} samtals</div>
           <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-            {stops.slice(-3).map((s) => <span key={s.stop} style={{ background:"#111", border:"1px solid #2a2a2a", borderRadius:6, color:"#888", fontSize:12, padding:"3px 8px" }}>{s.time && <span style={{ color:"#4a6a4a" }}>{s.time} · </span>}Stopp {s.stop}: {s.count}</span>)}
-            {stops.length > 3 && <span style={{ color:"#444", fontSize:12, padding:"3px 4px" }}>← {stops.length - 3} fleiri</span>}
+            {stops.slice(-6).map((s) => <span key={s.stop} style={{ background:"#111", border:"1px solid #2a2a2a", borderRadius:6, color:"#888", fontSize:12, padding:"3px 8px" }}>{s.time && <span style={{ color:"#4a6a4a" }}>{s.time} · </span>}Stopp {s.stop}: {s.count}</span>)}
+            {stops.length > 6 && <span style={{ color:"#444", fontSize:12, padding:"3px 4px" }}>← {stops.length - 6} fleiri</span>}
           </div>
         </div>
       )}
@@ -353,8 +365,8 @@ function WorkItemForm({ onAdd, onCancel }) {
   const [thermoZebra, setThermoZebra] = useState("50x300");
   const [otherDesc, setOtherDesc] = useState("");
   const [otherQty, setOtherQty] = useState("");
-  const isMeter = METER_TYPES.includes(type);
-  const isPiece = PIECE_TYPES.includes(type);
+  const isMeter = unitOf(type) === "meters";
+  const isPiece = unitOf(type) === "pieces";
   const isStencil = type === "Stencil";
   const isGangbraut = type === "Gangbraut";
   const isTriangle = type === "Þríhyrningar" || type === "Ferningar 50x50";
@@ -383,6 +395,7 @@ function WorkItemForm({ onAdd, onCancel }) {
       }
     }
     else if (isOther) { if (!otherDesc.trim()) return; item.description=otherDesc.trim(); item.quantity=otherQty; item.label=otherDesc.trim()+(otherQty?" x "+otherQty:""); }
+    if (!item.label) return;   // never log an unlabelled entry
     onAdd(item);
   };
   if (isTriangle) return <TriangleMode onDone={onAdd} onCancel={onCancel} label={type} />;
@@ -623,14 +636,27 @@ function SettingsPanel({ onClose }) {
   const [cars, setCars] = useState(() => { try { return JSON.parse(localStorage.getItem("rml_cars")) || DEFAULT_CARS; } catch { return DEFAULT_CARS; } });
   const regions = JSON.parse(localStorage.getItem("rml_regions")||"null") || DEFAULT_REGIONS;
   const [newItem, setNewItem] = useState("");
+  const [newUnit, setNewUnit] = useState("pieces");
+  const [units, setUnits] = useState(() => loadUnits());
   const [selectedRegion, setSelectedRegion] = useState(regions[0] || "");
   const saveSubRegions = (sr) => { setSubRegions(sr); localStorage.setItem("rml_subregions", JSON.stringify(sr)); };
   const saveWorkTypes = (wt) => { setWorkTypes(wt); localStorage.setItem("rml_worktypes", JSON.stringify(wt)); };
   const saveCars = (c) => { setCars(c); localStorage.setItem("rml_cars", JSON.stringify(c)); };
   const addTown = () => { if (!newItem.trim() || !selectedRegion) return; saveSubRegions({ ...subRegions, [selectedRegion]: [...(subRegions[selectedRegion]||[]), newItem.trim()] }); setNewItem(""); };
   const removeTown = (region, town) => saveSubRegions({ ...subRegions, [region]: subRegions[region].filter((t) => t !== town) });
-  const addWorkType = () => { if (!newItem.trim()) return; saveWorkTypes([...workTypes, newItem.trim()]); setNewItem(""); };
-  const removeWorkType = (wt) => saveWorkTypes(workTypes.filter((w) => w !== wt));
+  const addWorkType = () => {
+    if (!newItem.trim()) return;
+    const name = newItem.trim();
+    if (workTypes.includes(name)) { setNewItem(""); return; }
+    saveWorkTypes([...workTypes, name]);
+    const u = { ...units, [name]: newUnit };
+    setUnits(u); saveUnits(u);
+    setNewItem("");
+  };
+  const removeWorkType = (wt) => {
+    saveWorkTypes(workTypes.filter((w) => w !== wt));
+    const u = { ...units }; delete u[wt]; setUnits(u); saveUnits(u);
+  };
   const addCar = () => { if (!newItem.trim()) return; saveCars([...cars, newItem.trim()]); setNewItem(""); };
   const removeCar = (c) => saveCars(cars.filter((x) => x !== c));
   const tabs = [{ id:"towns", label:"Bæir" }, { id:"worktypes", label:"Verktegundir" }, { id:"cars", label:"Bílar" }];
@@ -653,8 +679,27 @@ function SettingsPanel({ onClose }) {
         )}
         {tab === "worktypes" && (
           <div>
-            {workTypes.map((wt) => <div key={wt} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"#111", borderRadius:6, padding:"8px 12px", marginBottom:6, fontSize:13, color:"#ccc" }}>{wt}<button onClick={() => removeWorkType(wt)} style={{ background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:15 }}>×</button></div>)}
-            <div style={{ display:"flex", gap:6, marginTop:8 }}><input type="text" value={newItem} onChange={(e) => setNewItem(e.target.value)} onKeyDown={(e) => e.key==="Enter" && addWorkType()} placeholder="Ný verktegund…" style={{ ...inputStyle, flex:1, fontSize:13 }} /><button onClick={addWorkType} style={{ ...btnPrimary, padding:"8px 12px" }}>+</button></div>
+            {workTypes.map((wt) => {
+              const u = unitOf(wt);
+              return (
+                <div key={wt} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:"#111", borderRadius:6, padding:"8px 12px", marginBottom:6, fontSize:13, color:"#ccc" }}>
+                  <span>{wt} <span style={{ color:"#555", fontSize:11 }}>{u==="meters" ? "· metrar" : u==="pieces" ? "· fjöldi" : "· sérform"}</span></span>
+                  <button onClick={() => removeWorkType(wt)} style={{ background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:15 }}>×</button>
+                </div>
+              );
+            })}
+            <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid #222" }}>
+              <label style={labelStyle}>Ný verktegund — hvernig er hún mæld?</label>
+              <div style={{ display:"flex", gap:6, marginBottom:8 }}>
+                {[{v:"meters",l:"Metrar"},{v:"pieces",l:"Fjöldi"}].map((o) => (
+                  <button key={o.v} onClick={() => setNewUnit(o.v)} style={{ flex:1, background:newUnit===o.v?"#e8f0e8":"#111", color:newUnit===o.v?"#111":"#666", border:`1px solid ${newUnit===o.v?"#e8f0e8":"#333"}`, borderRadius:8, padding:"8px", fontSize:13, fontWeight:newUnit===o.v?700:400, cursor:"pointer" }}>{o.l}</button>
+                ))}
+              </div>
+              <div style={{ display:"flex", gap:6 }}>
+                <input type="text" value={newItem} onChange={(e) => setNewItem(e.target.value)} onKeyDown={(e) => e.key==="Enter" && addWorkType()} placeholder="t.d. Númer stencill" style={{ ...inputStyle, flex:1, fontSize:13 }} />
+                <button onClick={addWorkType} style={{ ...btnPrimary, padding:"8px 12px" }}>+</button>
+              </div>
+            </div>
           </div>
         )}
         {tab === "cars" && (
